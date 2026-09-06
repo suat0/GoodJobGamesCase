@@ -1006,6 +1006,168 @@ yardım et, programcıya hata ver.
 
 ---
 
+## Karar 22 — Board'u kim yaratır? (composition root)
+
+View ilk kez yazılırken şu soru kaçınılmaz oldu: `Board` nesnesi nerede doğuyor, `LevelConfig` →
+`BoardConfig` dönüşümünü kim yapıyor?
+
+### Seçenekler
+- **A — `BoardView` kendi kurar** (LevelConfig'i okur, Board'u yaratır, çizer)
+- **B — Ayrı `GameController` (composition root)**
+- **C — DI container** (Zenject/Extenject, VContainer, Reflex) → Board bir binding
+- **D — ScriptableObject-based architecture** (Ryan Hipple, Unite 2017) → Board bir SO'da yaşar
+
+### Eleme gerekçeleri
+
+**A — sorumluluk sızıntısı.** View'ın işi bir tahtayı çizmek; *hangi* tahtanın var olduğuna karar
+vermek değil. Bunu view'a verirsen Faz 6'da hamle akışı da doğal olarak oraya sızar — "God View"
+tam olarak böyle doğar. Ayrıca tahtayı kurmak için sahne açmak gerekir hâle gelir.
+
+**C — container'ın çözdüğü problem bizde yok.** VContainer bugün Zenject'in yerini alıyor (compile-time
+codegen, ölçülebilir şekilde daha hızlı) ve **büyük takımlarda gerçekten doğru araç.** Ama container'ın
+kazandırdığı şey *çok sayıda, değişken, dallanan* bir bağımlılık grafiğini bildirimsel yönetmek.
+Bizim grafik tek yönlü ve üç düğümlü: `GameController → Board`, `GameController → BoardView`.
+Container burada yalnızca bir `Installer` dosyası ve yeni bir öğrenme yüzeyi ekler.
+
+**D — SO architecture'ın faydası başka bir eksende.** Asıl kazancı *sahneler arası* paylaşılan durum
+ve designer'ın kod yazmadan bağlaması. Tek sahne, tek tahta var. Dahası runtime state'i bir SO'ya
+koymak editörde kalıcılaşma tuzağı getirir — `LevelConfig`'de alanları bilerek yazılamaz property
+yapmamızın sebebi de bu.
+
+### Seçilen: B
+
+```csharp
+// GameController.Start()
+var config = new BoardConfig(level.Rows, level.Cols, ...);   // Core ↔ Game tek dönüşüm noktası
+var rng    = level.Seed == 0 ? new System.Random() : new System.Random(level.Seed);
+board = new Board(config, rng);
+board.Generate();
+if (board.IsDeadlocked) board.TryResolveDeadlock();          // Karar 16
+boardView.Bind(board); boardView.Redraw();
+```
+
+Faz 4'te sadece bu kadar; Faz 6'da hamle akışı, skor ve kazanma/kaybetme **aynı sınıfın içine**
+ekleniyor. Atılacak geçici kod yok.
+
+> **Kayda değer nüans:** B, C'nin container'sız hâli — reddettiğimiz bir kalıp değil, **aynı kalıbın
+> bu ölçekteki formu.** "Kim kimi yaratır" sorusunun tek bir cevabı olması, DI container kullanılsa
+> da kullanılmasa da aynı ilkedir; container o kökü sadece daha bildirimsel yazar. README'de bunu
+> böyle ifade etmek, container'ı "gereksiz" diye elemekten daha güçlü.
+
+---
+
+## Karar 23 — Renk + ikon seviyesi → Sprite eşlemesi nerede yaşar?
+
+### Seçenekler
+- **A — `BoardView`'da serialize edilmiş `ColorSprites[]`** (renk indeksine göre; her eleman Default/A/B/C)
+- **B — Ayrı `BlockSprites` ScriptableObject** (sprite veritabanı)
+- **C — İsimden yükleme** (`Resources.Load($"{color}_{tier}")` veya Addressables)
+- **D — Serialize edilebilir dictionary** (Odin, AYellowpaper vb. bir paketle)
+
+### Eleme gerekçeleri
+
+**C — yanlış araç, ve sessiz başarısızlık.** `Resources` Unity'nin resmî olarak kaçınılmasını
+söylediği mekanizma (build'e her şeyi katar, startup'ta manifest maliyeti). Addressables doğru araçtır
+ama sorunu *content update* ve *bellek bütçesi* olan projeler için — bizim 26 sprite'ımız zaten tek
+atlas. Asıl eleme gerekçesi performans değil: **isimden yükleme eksik asset'i runtime'da sessiz `null`
+yapar.** Serialize referans ise editörde görünür, eksikse Play'de adıyla hata verir.
+
+**D — dictionary'nin dejenere hâli.** Unity dictionary serialize etmiyor; bunu istemek üçüncü parti
+paket demek. Bizde anahtar zaten `[0, K)` aralığında **yoğun bir tamsayı** → doğru veri yapısı dizi.
+Hash tablosu kurmak burada aynı sonuca daha pahalı yoldan gitmek.
+
+**B — yanlış değil, erken.** Tek tema ve tek tüketici var.
+
+### Seçilen: A
+
+```csharp
+[Serializable] private sealed class ColorSprites {
+    public Sprite defaultIcon, iconA, iconB, iconC;
+    public Sprite ForTier(int tier) => ...;   // 3→C, 2→B, 1→A, aksi→default
+}
+```
+
+Box sprite'ları ayrı bir dizi, **alınan hasara göre indeksli** (`boxSprites[BoxMaxHealth - health]`),
+çünkü asset'ler `Box0` = hasarsız, `Box1` = 1 hasar almış olarak adlandırılmış.
+
+### Ne zaman B'ye geçilir
+
+Gerçek gerekçesi **skin/tema sistemi**: aynı tahta, farklı sprite seti. O gün `BoardView` tek bir
+`[SerializeField] BlockSprites theme` alanına iner — 5 dakikalık refactor, bugünden ödenmesi gereken
+bir bedel değil.
+
+> **Genel kural:** *asset tablosunu, onu değiştirecek kişinin açacağı yere koy.* Sprite setini yalnızca
+> programcı değiştiriyorsa view'da serialize alan; designer varyant üretiyorsa SO veritabanı.
+> Content-heavy mobil yapımlarda (King, Playrix tarzı) SO + Addressables kombinasyonu standart —
+> orada tablo *içerik*, bizde *kurulum*.
+
+---
+
+## Karar 24 — Pool: kendi sınıfımız mı, `UnityEngine.Pool` mu?
+
+### Seçenekler
+- **A — Kendi `BlockPool`'umuz:** sabit kapasite, başta hepsi üretilir, tükenirse **fırlatır**
+- **B — `UnityEngine.Pool.ObjectPool<T>`** (Unity 2021.1+ ile gelen resmî generic pool)
+- **C — MonoBehaviour `PoolManager` singleton'ı**
+- **D — Büyüyen pool** (tükenince `Instantiate` eder)
+
+### B'nin eleme gerekçesi — API'yi bilmemek değil, semantiğini bilmek
+
+`ObjectPool<T>` **lazy**'dir: `Get()` çağrıldığında elde yoksa `createFunc` ile yaratır.
+`defaultCapacity` iç `Stack`'in kapasitesidir, "şu kadar obje hazır dursun" demek değil. Yani
+**"oyun sırasında sıfır `Instantiate`" garantisini kendisi vermiyor** — prewarm'ı yine sen yazıyorsun
+(`Get` → listeye at → hepsini `Release`).
+
+Case'in doğrudan sorduğu şey bu garanti olduğu için, garantiyi **kodun şeklinden okunur** yapmak
+burada ~40 satıra değiyor. README'de *"resmî API'yi biliyorum, prewarm semantiği bu vaadi vermediği
+için kullanmadım"* demek, kullanıp aynı vaadi ayrıca yazmaktan daha iyi bir sinyal.
+
+### C'nin eleme gerekçesi
+`Update`'i olmayan, sahnede görünmesi gereken hiçbir sebebi olmayan bir MonoBehaviour + singleton.
+`BoardView` pool'un sahibi; sahnede ayrıca durması "kim sahibi" sorusunu bulanıklaştırır.
+→ **Plain C# sınıfı** (Karar 17'nin üç şartını geçiyor: kendi durumunun tek sahibi, gerçek bir kavram adı).
+
+### D'nin eleme gerekçesi — sektörün varsayılanı, ama farklı bir soruya cevap
+
+Büyüyen pool sektörde **doğru varsayılan**, çünkü tipik senaryoda yük tahmin edilemez ve spike
+absorbe edilmek istenir. Bizde kapasite tahtadan türetiliyor: ekranda `M*N` hücreden fazla blok
+gösterilemez. O yüzden tükenme bir yük artışı değil, **iade edilmemiş blok = sızıntı** demek.
+Büyüyen pool bunu sessizce yamalar; fırlatan pool, var olma sebebi olan bug'ı görünür kılar.
+
+### Seçilen: A
+
+```csharp
+pool = new BlockPool(blockPrefab, transform, board.CellCount + board.Cols);
+```
+
+Kapasite `M*N + bir satır`: `Redraw` **önce tüm blokları iade eder, sonra kiralar**, dolayısıyla tepe
+kullanım tam olarak `M*N`. Fazladan satır ileride bir efektin kısa süre elinde tuttuğu blok için pay —
+off-by-one'ı "olası değil" olmaktan çıkarıp "imkânsız" yapıyor.
+
+Çift iade de fırlatıyor: aynı bloğu iki kez iade etmek onu iki hücreye birden kiralatır ve hata
+**bambaşka bir yerde eksik blok** olarak görünür.
+
+> **Not:** sabit kapasite ile büyüyen pool rakip değil, farklı sorulara verilen cevaplar. Sınırı bilinen
+> tahta objelerinde prewarm + sabit kapasite; sınırı bilinmeyen partikül/popup/ses kaynaklarında
+> büyüyen pool. Faz 7'deki Box kırılma partikülü ikinci gruba girerse orada başka karar verilir.
+
+---
+
+## Karar 25 — `Redraw()` tam yeniden çizim mi, diff mi?
+
+**Seçilen: şimdilik tam rebuild.** Tahta Faz 4'te statik; `Redraw` tüm blokları iade edip yeniden
+kiralıyor.
+
+Faz 5'te `BlastResult` okunacak ve **yalnızca değişen** bloklara dokunulacak. `Redraw` o zaman
+kaybolmuyor: "tahtayı ilk gösterme" ve "shuffle sonrası yeniden çizme" yolu olarak kalıyor.
+
+**Kayda değer olan gerekçe:** diff'i **performans için değil, animasyonun ihtiyacı olduğu için**
+yapacağız. 100 `SpriteRenderer`'a sprite atamak zaten mikrosaniyeler; ama düşen bir bloğu
+"eski yerinden yeni yerine taşımak" ancak hangi bloğun hangisi olduğunu bilirsek mümkün.
+→ Aynı optimizasyonu yanlış gerekçeyle savunmak, README'de en kolay yakalanan zayıflık.
+
+---
+
 ## Dokümandaki tutarsızlıklar
 
 README'ye yazılacak — dokümanın gerçekten okunduğunu gösterir.
@@ -1089,7 +1251,12 @@ foreach (int cell in group) {
 
 **Bilinçli yazılmayanlar:** deadlock tespiti (6 zaten kapsıyor), boş tahta, geçersiz config, animasyon süresi, tıklama koordinat çevrimi → ya başka bir testin yan ürünü ya da kırıldığında ekranda anında belli oluyor.
 
-**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için 9 EditMode testi ile kritik davranışlar kilitlendi."*
+> **Uygulamada:** bu 9 **senaryo**, 5 dosyada **57 test metoduna** açıldı. Sayının şişmesi kapsam
+> kayması değil: her senaryo sınır değerlerinde ve birden fazla tahta şeklinde ayrı ayrı iddia
+> ediliyor (ikon eşikleri tek başına 6 sınır değeri, shuffle testleri ~200 tohum üzerinde koşuyor).
+> Değerli olan sayı 57 değil, hâlâ **hangi 9 şeyin sessizce kırılabileceğini** bilmemiz.
+
+**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için kritik davranışlar 9 senaryo / 57 EditMode testiyle kilitlendi."*
 
 ---
 
