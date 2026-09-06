@@ -592,6 +592,178 @@ Ayrıca test assembly'si zaten gerekiyordu → ikinci asmdef'in ek maliyeti sıf
 
 ### Seçilen: B
 
+
+## Karar 13 — `GroupFinder` veriye nasıl erişir?
+
+Flood fill'in üç geçici diziye ihtiyacı var (`groupIdOf`, `groupSizes`, `stack`) ve bunlar Karar 3 gereği **bir kez alloc edilip yeniden kullanılacak.** Yani geçici durumun kalıcı bir eve ihtiyacı var. Soru, o evin nerede olduğu ve `cells` dizisine nasıl ulaştığı.
+
+### Seçenekler
+
+| | Yaklaşım | Artı | Eksi |
+|---|---|---|---|
+| A1 | `GroupFinder` constructor'da `Cell[] cells, int rows, int cols` alır — Board ile **aynı diziyi paylaşır** | Board şişmez, scratch dizileri sınıfın kendi field'ı, çağrı yüzeyi temiz | İki nesne aynı diziye referans tutar; "Board bu diziyi asla yeniden atamaz" yazısız bir sözleşme |
+| A2 | Constructor **sadece boyutları** alır (scratch'i ayırır), veri her çağrıda `ReadOnlySpan<Cell>` olarak geçer | Tutulan referans yok → bayatlayamaz. `ReadOnlySpan` "okurum, yazmam"ı **tip seviyesinde** söyler. Test için `Board` kurmaya gerek yok | `rows`/`cols` iki yerde yaşıyor, tutarsız kalabilir |
+| B | `static` metotlar, her çağrıda dizi parametre | En "saf" görünen | **Çalışmaz.** Scratch dizilerinin yaşayacak yeri yok; static field yapılırsa global durum olur, testler birbirinin sonucunu bozar |
+| C | Grup bulma `Board.cs` içine gömülür | Dosya sayısı 6 → 5 | Board hem veri sahibi hem algoritma olur; tek sorumluluk erozyona uğrar |
+
+### Eleme gerekçeleri
+
+**B elendi.** Karar 12'deki "bir sınıf kendi rastgeleliğini/zamanını kendisi yaratmasın" kuralının aynısı, tersten okunuşu: paylaşılan geçici durum global'e taşınırsa testler sıraya duyarlı hale gelir.
+
+**C elendi.** `GroupFinder.cs` zaten Karar 1'in "en fazla 4-6 dosya" sınırının içinde. Dosya kazanmak için sorumluluk birleştirmek yanlış takas.
+
+**A1 elenmedi, sektörde daha yaygın olan bu.** Tek eleme sebebi, C/C++ dünyasının elinde olmayan bir aracın bizde olması (aşağıya bak).
+
+### Seçilen: A2
+
+```csharp
+// Owns only its scratch buffers; the board data arrives per call. Nothing is retained,
+// so nothing can go stale.
+public GroupFinder(int rows, int cols)
+public void Recalculate(ReadOnlySpan<Cell> cells, int thresholdA, int thresholdB, int thresholdC)
+```
+
+`rows`/`cols` tutarsızlığı `[Conditional("UNITY_ASSERTIONS")]` bir assert ile kilitlenir (`cells.Length == rows * cols`) → release build'de tamamen kaybolur.
+
+### Desenin sektördeki adı: caller-owned workspace
+
+Seçtiğimiz şey **"veriyi sahibi tutar, algoritma kendi çalışma alanını tutar"** deseni. Algoritma nesnesi kalıcıdır, tek seferlik değildir ve çalışma anında **hiç allocate etmez** çünkü ihtiyacı olan belleği kurulumda bir kez almıştır.
+
+| Sistem | Karşılığı |
+|---|---|
+| **Recast/Detour** — `dtNavMeshQuery` | NavMesh verisini `dtNavMesh` sahiplenir. Sorgu nesnesi `init(navMesh, maxNodes)` ile bir kez kurulur; open list ve node pool onun içinde yaşar, sonraki binlerce `findPath` sıfır allocation yapar. **Bizim `stack` + `groupIdOf`'umuzun birebir karşılığı.** |
+| **Box2D** | `b2World` gövdeleri sahiplenir, çözücüler veriye pointer alır, geçici belleği `b2StackAllocator`'dan çeker. Açık tasarım hedefi: step sırasında `malloc` yok. |
+| **LAPACK / BLAS** | Rutinler `WORK` dizisi + `LWORK` alır; kütüphane asla kendi belleğini ayırmaz. "Caller-owned workspace" terimi buradan. |
+| **Unity DOTS** | Sistemler veri tutmaz; `NativeArray`'i `Allocator.Persistent` ile system field'ı yapıp her frame yeniden kullanmak standart pratik. |
+
+Bu örneklerin hepsi A1 şeklinde, çünkü C/C++'ta `ReadOnlySpan` gibi bir araç yok — ödünç referansı ifade edecek tek yol yorum yazmak. C#'ta varken kullanmamak için sebep yok.
+
+> **Ders:** Geçici durumun bir eve ihtiyacı var. Fonksiyon yerelinde tutarsan her çağrıda allocate edersin, global yaparsan testler birbirini bozar, nesne field'ı yaparsan ikisinden de kaçarsın.
+
+---
+
+## Karar 14 — İkon seviyesi: saklanır mı, türetilir mi?
+
+`RecalculateGroups()` bittiğinde elimizde iki dizi var:
+
+```
+groupIdOf   : hücre index'i -> grup id'si (-1 = renkli bileşene ait değil)
+groupSizes  : grup id'si    -> boyut
+```
+
+İkon seviyesi bunların fonksiyonu. Soru, üçüncü bir dizi olarak saklanıp saklanmayacağı.
+
+### Seçenekler
+- **A — `byte[] tierOf`**, `Recalculate()` sırasında hücre başına doldurulur
+- **B — `TierAt(int index)` metodu**, okuma anında `groupSizes[groupIdOf[i]]` üzerinden hesaplar; ekstra dizi yok
+- **C — Eşikleri View'a ver**, karşılaştırmayı View yapsın
+
+### Eleme gerekçeleri
+
+**C elendi.** İkon eşikleri bir **oyun kuralı** (case'in açık gereksinimi), render detayı değil. View'a taşımak Karar 1'in sınırını deler.
+
+**A elendi.** Performans farkı yok — ikisi de aynı üç karşılaştırmayı yapıyor, sadece *ne zaman* yaptıkları farklı. Fark **senkron tutulması gereken durum sayısında**: A'da `tierOf`, diğer ikisinin türevi olarak var olur ve bir gün birinin onu güncellemeyi unutması mümkün (shuffle sonrası, Box kırıldığında). Ortaya çıkan bug **sessiz** — tahta doğru oynanır, sadece bazı bloklar yanlış ikonu gösterir. Ekrana bakan kimse fark etmez.
+
+### Seçilen: B
+
+```csharp
+public int TierAt(int cellIndex)
+{
+    int gid = groupIdOf[cellIndex];
+    if (gid < 0) return 0;                  // Empty or Box: no group, no tier
+
+    int size = groupSizes[gid];
+
+    // Tested C -> B -> A so the highest match wins. LevelConfig guarantees the
+    // thresholds are strictly ascending, which is what makes this order correct.
+    if (size > thresholdC) return 3;
+    if (size > thresholdB) return 2;
+    if (size > thresholdA) return 1;
+    return 0;
+}
+```
+
+Maliyet: yeniden çizimde hücre başına 1 dizi okuma + 3 karşılaştırma. 100 hücrede ~300 işlem, hamlede bir kez. Ölçülemez.
+
+> **Ders: cache sınırını maliyetin gerçekten olduğu yere çiz.** `groupIdOf` cache'lenir çünkü üretmek tam bir flood fill gerektirir. Tier cache'lenmez çünkü üretmek üç `if`. İkisine aynı muameleyi yapmak, "cache iyidir" refleksinin düşünmenin yerine geçmesi olurdu.
+
+**README cümlesi:** *"Grup verisi cache'lenir çünkü hesaplanması pahalı; ikon seviyesi cache'lenmez çünkü grup verisinden üç karşılaştırmayla türer. İkincisini de saklamak, senkron tutulması gereken üçüncü bir durum yaratmaktan başka bir şey yapmazdı."*
+
+### Alt karar 14a — Tek hücrelik bileşenler de grup alır
+
+Yalnız kalan renkli bir hücreye de grup id'si verilir (boyut 1). Alternatif (`-1` vermek) `TierAt`'e ikinci bir kod yolu eklerdi.
+→ **`-1` tek anlam taşır: "renkli bileşene ait değil"** (Empty veya Box). Patlatılabilirlik ayrı bir sorudur:
+
+```csharp
+public bool IsBlastable(int cellIndex)
+{
+    int gid = groupIdOf[cellIndex];
+    return gid >= 0 && groupSizes[gid] >= 2;
+}
+```
+
+### Alt karar 14b — Metot `GroupFinder`'da, `Board` forward eder
+
+`TierAt`'in ihtiyacı olan her şey (`groupIdOf`, `groupSizes`, eşikler) `GroupFinder`'da. Ama View'ın muhatabı `Board`.
+→ Metot `GroupFinder`'da yaşar, `Board` tek satır forward yazar (`public int TierAt(int i) => groupFinder.TierAt(i);`). View Core'un iç yapısını bilmez, `Board` tek giriş noktası kalır.
+
+---
+
+## Karar 15 — Komşu gezinme
+
+`CLAUDE.md`'deki sözde kod `foreach (int nb in Neighbors(cell))` diyor. Bu satırın nasıl yazıldığı, "oyun sırasında sıfır allocation" hedefinin tutup tutmayacağını tek başına belirliyor.
+
+### Seçenekler
+- **A — `IEnumerable<int>` + `yield return`**
+- **B — 4 yönü elle açık yazmak** (döngü yok, dört ayrı blok)
+- **C — `static readonly int[] dr/dc` ile 4'lük döngü**, sınır kontrolü `(r, c)` üzerinden
+- **D — Çağıranın verdiği `int[] buffer`'ı doldur, `count` döndür**
+
+### Eleme gerekçeleri
+
+**A elendi — bu bir tuzak.** `yield return` derleyicinin ürettiği bir state machine **nesnesi** demek; her çağrıda heap'e gider. Flood fill'de hücre başına bir tane → tarama başına ~100 allocation. `foreach` sözdizimi bu maliyeti tamamen gizler; kodun görüntüsü temiz, Profiler'daki hâli değil.
+
+**B elendi.** Alloc açısından C ile aynı, tek kazancı bir dizi okuması. Karşılığında dört kez kopyala-yapıştır → dördünden birinde sınır kontrolünü düzeltmeyi unutmak klasik hata.
+
+**D elendi.** C ile aynı sonucu veriyor, karşılığında çağırana buffer yönetimi yüklüyor. Karar 10'daki kural: *aynı sonuca daha pahalı yoldan gitmek optimizasyon değildir.*
+
+### Seçilen: C
+
+```csharp
+// Row-major 1D indexing means +-1 crosses into the neighbouring row at the edges,
+// so bounds are checked on (r, c) and only then folded back into an index.
+private static readonly int[] dr = { 1, -1, 0, 0 };
+private static readonly int[] dc = { 0, 0, 1, -1 };
+```
+
+### ⚠️ Kritik detay — satır sarması
+
+Sınır kontrolü **1D index üzerinde `±1` ile yapılamaz.** `index + 1`, satır sonundaki bir hücreyi bir sonraki satırın başına bağlar; komşu olmadıkları hâlde flood fill onları birleştirir.
+
+Bu hatanın kötü yanı, **mevcut test planındaki hiçbir testin onu yakalamaması**: Test 4 çapraz komşuluğu kontrol ediyor, oysa bu hata çapraz değil **yatay sarma** üretiyor. Ayrıca yalnızca satır kenarlarında tetikleniyor, yani tahtanın ortasında her şey doğru görünüyor.
+
+→ **Test planına 9. test:** kenar sarması yok (satır sonundaki hücre, bir sonraki satırın başındaki aynı renkli hücreyle aynı gruba girmemeli).
+
+---
+
+## Karar 16 — Başlangıç tahtası deadlock ile doğarsa?
+
+Kısıtlı rastgele üretim, düşük ihtimalle de olsa hiç grubu olmayan bir tahta üretebilir. K=6 ve küçük tahtalarda ihtimal ihmal edilebilir değil.
+
+### Seçenekler
+- **A — Üretimde garanti et:** üretim sırasında en az bir komşu çifti aynı renge zorla
+- **B — Mevcut mekanizmayı kullan:** `GameController` ilk karede de `RecalculateGroups()` + deadlock kontrolü çalıştırsın; deadlock varsa `DeadlockResolver` zaten devreye girer
+
+### Eleme gerekçesi
+
+**A elendi.** Karar 9'daki garanti adımı zaten tam olarak bu işi yapıyor. İkinci bir mekanizma yazmak, Karar 10'un kuralının tekrarı: *aynı sonuca daha pahalı yoldan gitmek optimizasyon değildir.* Üstelik iki mekanizma iki bakım noktası demek — kuralları zamanla ayrışabilir.
+
+### Seçilen: B
+
+Bedava gelen bir yan fayda var: shuffle yolu artık oyunun **ilk karesinde** de çalışabiliyor, yani "sadece nadir durumda tetiklenen, o yüzden hiç sınanmamış kod yolu" olmaktan çıkıyor.
+
+> **Ders:** Yeni bir uç durumla karşılaşınca ilk soru "bunu nasıl önlerim" değil, **"bunu zaten çözen bir yolum var mı"** olmalı. Karar 8'de (C + B birlikte) tersini yapmıştık — orada iki mekanizma *farklı işler* görüyordu (biri tasarım garantisi, diğeri savunma önlemi). Burada ikisi de aynı işi görürdü.
+
 ```
 Assets/
   Scripts/
