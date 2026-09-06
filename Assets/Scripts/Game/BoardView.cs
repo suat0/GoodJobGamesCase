@@ -219,6 +219,12 @@ namespace BlastGame.Game
         /// <remarks>
         /// Lives here because this class already owns both halves of the mapping: the layout that turns a
         /// cell into a position, and the animator that knows which blocks have landed.
+        /// <para>
+        /// <b>The settled filter is the last step, and it is the only one.</b> It asks about the tapped
+        /// cell alone, never about the group - the case document requires that blocks which have landed
+        /// stay tappable while others are still falling, so a group with one member mid-air must still
+        /// blast (Karar 5, B2).
+        /// </para>
         /// </remarks>
         public bool TryPickCell(Vector3 screenPosition, out int cellIndex)
         {
@@ -235,7 +241,10 @@ namespace BlastGame.Game
 
             if (row < 0 || row >= board.Rows || col < 0 || col >= board.Cols) return false;
 
-            cellIndex = row * board.Cols + col;
+            int candidate = row * board.Cols + col;
+            if (!fallAnimator.IsSettled(candidate)) return false;
+
+            cellIndex = candidate;
             return true;
         }
 
