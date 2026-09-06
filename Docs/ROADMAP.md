@@ -230,7 +230,7 @@ Unity'de hâlâ hiçbir şey görünmüyor.
 ## Kontrol listesi (teslim öncesi)
 
 - [ ] Core'da tek bir `using UnityEngine` yok (asmdef zorluyor)
-- [ ] Testler yeşil — 9 senaryo, 57 test metodu (`DECISIONS.md` → Test planı)
+- [ ] Testler yeşil — 9 senaryo, 58 test metodu (`DECISIONS.md` → Test planı)
 - [ ] 2×2, 10×10, K=1, K=6, Box=0 konfigürasyonları çalışıyor
 - [ ] Oynanış sırasında GC Alloc = 0
 - [ ] Tahta tek draw call

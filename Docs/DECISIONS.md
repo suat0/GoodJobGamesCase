@@ -1251,12 +1251,12 @@ foreach (int cell in group) {
 
 **Bilinçli yazılmayanlar:** deadlock tespiti (6 zaten kapsıyor), boş tahta, geçersiz config, animasyon süresi, tıklama koordinat çevrimi → ya başka bir testin yan ürünü ya da kırıldığında ekranda anında belli oluyor.
 
-> **Uygulamada:** bu 9 **senaryo**, 5 dosyada **57 test metoduna** açıldı. Sayının şişmesi kapsam
+> **Uygulamada:** bu 9 **senaryo**, 5 dosyada **58 test metoduna** açıldı. Sayının şişmesi kapsam
 > kayması değil: her senaryo sınır değerlerinde ve birden fazla tahta şeklinde ayrı ayrı iddia
 > ediliyor (ikon eşikleri tek başına 6 sınır değeri, shuffle testleri ~200 tohum üzerinde koşuyor).
-> Değerli olan sayı 57 değil, hâlâ **hangi 9 şeyin sessizce kırılabileceğini** bilmemiz.
+> Değerli olan sayı 58 değil, hâlâ **hangi 9 şeyin sessizce kırılabileceğini** bilmemiz.
 
-**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için kritik davranışlar 9 senaryo / 57 EditMode testiyle kilitlendi."*
+**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için kritik davranışlar 9 senaryo / 58 EditMode testiyle kilitlendi."*
 
 ---
 
