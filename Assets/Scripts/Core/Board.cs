@@ -37,6 +37,13 @@ namespace BlastGame.Core
         private readonly GravityResolver gravity;
 
         /// <summary>
+        /// Only ever used when the board has no legal move. Built up front anyway: its scratch arrays are
+        /// sized from the board, and allocating them at the moment they are needed would put a spike in
+        /// the one frame that is already doing the most work.
+        /// </summary>
+        private readonly DeadlockResolver deadlockResolver;
+
+        /// <summary>
         /// Reused across the whole session. See BlastResult's own note: listeners consume it during the
         /// call and never keep it.
         /// </summary>
@@ -80,6 +87,7 @@ namespace BlastGame.Core
 
             groupFinder = new GroupFinder(config);
             gravity = new GravityResolver(config, this.rng);
+            deadlockResolver = new DeadlockResolver(config, this.rng);
             lastBlast = new BlastResult(config);
             boxStamp = new int[cells.Length];
         }
@@ -255,6 +263,37 @@ namespace BlastGame.Core
 
         /// <summary>Biggest group on the board. Zero when no coloured cells remain.</summary>
         public int LargestGroupSize => groupFinder.LargestGroupSize;
+
+        /// <summary>
+        /// True when no group can be blasted. Free: the group scan already knows the largest group, so
+        /// detection is a comparison rather than a pass of its own (DECISIONS.md, Karar 3).
+        /// </summary>
+        public bool IsDeadlocked => groupFinder.LargestGroupSize < GroupFinder.MinBlastableSize;
+
+        /// <summary>
+        /// Rearranges the board's colours until at least one group exists, in a single pass.
+        /// </summary>
+        /// <returns>False when the board cannot be rearranged into a playable one - the level is lost.</returns>
+        /// <remarks>
+        /// Deliberately not called from <see cref="TryBlast"/>. Whether a deadlocked board should be
+        /// shuffled is a question about the game, not about the board: the move flow checks the objective
+        /// and the move limit first, because a board that has just been won must not shuffle. Core states
+        /// the situation through <see cref="IsDeadlocked"/> and offers the remedy; the caller decides
+        /// (DECISIONS.md, Karar 29).
+        /// <para>
+        /// The same two calls handle a board that is born deadlocked, so the start of a level needs no
+        /// separate guarantee - and the shuffle path gets exercised in ordinary play instead of being
+        /// code that only runs on a rare board (Karar 16).
+        /// </para>
+        /// </remarks>
+        public bool TryResolveDeadlock()
+        {
+            if (!deadlockResolver.TryResolve(cells)) return false;
+
+            // Same contract as Generate and LoadState: nothing that changes cells leaves stale groups.
+            RecalculateGroups();
+            return true;
+        }
 
         /// <summary>
         /// Live Boxes on the board. Counted rather than tracked: a decrementing counter would be a third

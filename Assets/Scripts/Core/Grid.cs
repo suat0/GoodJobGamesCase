@@ -22,8 +22,16 @@ namespace BlastGame.Core
         /// <summary>Orthogonal only - diagonals are not adjacency, per the case document.</summary>
         public const int DirectionCount = 4;
 
-        // Up, down, right, left. Order is irrelevant to correctness: flood fill visits the whole
-        // connected component regardless, and box damage is stamped once per box per blast.
+        // Direction indices into the step tables below. Named because one caller depends on which is
+        // which: the deadlock scan wants every unordered neighbour pair exactly once, so it takes Up and
+        // Right and lets the other cell of each pair supply the other half. Everywhere else the order is
+        // irrelevant - flood fill visits the whole component regardless, and box damage is stamped once
+        // per box per blast.
+        public const int Up = 0;
+        public const int Down = 1;
+        public const int Right = 2;
+        public const int Left = 3;
+
         private static readonly int[] RowStep = { 1, -1, 0, 0 };
         private static readonly int[] ColStep = { 0, 0, 1, -1 };
 
