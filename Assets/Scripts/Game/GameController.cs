@@ -1,28 +1,55 @@
+using System;
 using BlastGame.Core;
 using UnityEngine;
 
 namespace BlastGame.Game
 {
     /// <summary>
-    /// Owns the board and starts the level. The move flow, scoring and win/lose states arrive here later.
+    /// The Unity shell around a <see cref="GameSession"/>: builds the level from the config and announces
+    /// what happened to whoever is listening.
     /// </summary>
     /// <remarks>
     /// <b>The one place LevelConfig meets Core.</b> Core is engine-free and cannot see a ScriptableObject,
-    /// so the values are copied into a <see cref="BoardConfig"/> here and nowhere else - a new setting has
-    /// exactly one place to be threaded through (CLAUDE.md, data model).
+    /// so the values are copied into a <see cref="BoardConfig"/> here and nowhere else.
     /// <para>
-    /// The board is created here rather than by the view, because the view's job is to draw a board, not
-    /// to decide which board exists. Keeping ownership on this side is what lets the view stay a pure
-    /// reader of Core.
+    /// <b>It holds no reference to anything that draws.</b> The view, the HUD and later the audio all
+    /// subscribe to it; it subscribes to nothing. That keeps the dependency one-way - the harmful kind of
+    /// coupling is the kind that points both ways (Karar 4) - and it is why this class compiles without
+    /// knowing that a screen exists.
+    /// </para>
+    /// <para>
+    /// <b>Named handlers, subscribed in OnEnable.</b> Listeners must follow the rules in Karar 4: hook up
+    /// in <c>OnEnable</c> and unhook in <c>OnDisable</c>, never in Start/OnDestroy - an object that is
+    /// disabled and re-enabled would otherwise end up subscribed twice and act on every event twice.
     /// </para>
     /// </remarks>
     public sealed class GameController : MonoBehaviour
     {
         [SerializeField] private LevelConfig level;
-        [SerializeField] private BoardView boardView;
 
-        private Board board;
+        /// <summary>A level is ready to be drawn from scratch. Raised at startup and after a restart.</summary>
+        public event Action<Board> OnBoardReady;
 
+        /// <summary>
+        /// A move resolved. The argument is Core's single reused result - read it during the call, never
+        /// store it (BlastResult).
+        /// </summary>
+        public event Action<BlastResult> OnBoardChanged;
+
+        /// <summary>The board had no legal move and was rearranged. Listeners play the shuffle feedback.</summary>
+        public event Action OnDeadlockResolved;
+
+        /// <summary>Score, moves, remaining Boxes or the game state may have changed; re-read the session.</summary>
+        public event Action OnStatusChanged;
+
+        private GameSession session;
+
+        /// <summary>Everything the HUD needs. Read-only to the rest of the game.</summary>
+        public GameSession Session => session;
+
+        // Start rather than Awake: every listener has subscribed by now, because Unity runs all of the
+        // scene's Awake and OnEnable calls before the first Start. Raising OnBoardReady from Awake would
+        // announce a board to an empty room.
         private void Start()
         {
             var config = new BoardConfig(
@@ -35,37 +62,49 @@ namespace BlastGame.Game
             // quietly break that reproducibility (CLAUDE.md, architecture rule 1).
             var rng = level.Seed == 0 ? new System.Random() : new System.Random(level.Seed);
 
-            board = new Board(config, rng);
+            // Board makes a layout, GameSession plays one. The split is why the turn rules can be
+            // tested on a stated board instead of a rolled one.
+            var board = new Board(config, rng);
             board.Generate();
 
-            // A freshly generated board can be born without a legal move. The same two calls that handle
-            // a deadlock mid-game handle it here, so the opening needs no guarantee of its own and the
-            // shuffle path is not code that only runs on a rare board (DECISIONS.md, Karar 16).
-            if (board.IsDeadlocked) board.TryResolveDeadlock();
+            session = new GameSession(board, level.MoveLimit);
 
-            boardView.Bind(board);
-            boardView.Redraw();
+            OnBoardReady?.Invoke(board);
+            OnStatusChanged?.Invoke();
         }
 
         /// <summary>
-        /// Plays a tap. Does nothing when the cell holds no blastable group.
+        /// Plays a tap. Does nothing when the cell holds no blastable group or the level is over.
         /// </summary>
         /// <remarks>
-        /// The whole move resolves inside <see cref="Board.TryBlast"/> before the view is told, so the
-        /// board is never observable half-finished and the animation that follows is catching up, not
-        /// participating (Karar 5).
-        /// <para>
-        /// The move counter, scoring, the objective and the deadlock check belong in this method and are
-        /// deliberately not here yet: their order is a decision of its own (win before lose, deadlock
-        /// last) and it is the subject of the next phase. Until then a board that deadlocks stays
-        /// deadlocked - restart to get a new one.
-        /// </para>
+        /// The whole turn - blast, damage, gravity, refill, the objective, the move limit and the deadlock
+        /// check - resolves inside <see cref="GameSession.Play"/> before anything is announced, so no
+        /// listener can ever see the board halfway through a move (Karar 5).
         /// </remarks>
         public void TryBlastAt(int cellIndex)
         {
-            if (!board.TryBlast(cellIndex)) return;
+            TurnResult turn = session.Play(cellIndex);
+            if (!turn.Played) return;
 
-            boardView.ApplyBlast(board.LastBlast);
+            OnBoardChanged?.Invoke(session.Board.LastBlast);
+
+            if (turn.Shuffled) OnDeadlockResolved?.Invoke();
+
+            // Last, so listeners read a state that is finished settling.
+            OnStatusChanged?.Invoke();
+        }
+
+        /// <summary>Starts the level over on a freshly generated board.</summary>
+        /// <remarks>
+        /// The same board object is regenerated rather than replaced, so the view keeps its pool and its
+        /// arrays - a restart costs no allocation and no Instantiate.
+        /// </remarks>
+        public void Restart()
+        {
+            session.Restart();
+
+            OnBoardReady?.Invoke(session.Board);
+            OnStatusChanged?.Invoke();
         }
     }
 }

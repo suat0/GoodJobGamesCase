@@ -48,6 +48,9 @@ namespace BlastGame.Game
             }
         }
 
+        [Header("Wiring")]
+        [SerializeField] private GameController controller;
+
         [Header("Blocks")]
         [SerializeField] private BlockView blockPrefab;
 
@@ -87,6 +90,34 @@ namespace BlastGame.Game
         /// <summary>Centre of cell (0, 0) in world space. Row 0 is the bottom row, as everywhere else.</summary>
         private Vector3 origin;
 
+
+        // Karar 4: subscribe in OnEnable, unsubscribe in OnDisable, always through named methods. Start
+        // and OnDestroy would leave an object that is disabled and re-enabled subscribed twice, and a
+        // lambda could never be unsubscribed at all - it also captures, which allocates.
+        private void OnEnable()
+        {
+            controller.OnBoardReady += HandleBoardReady;
+            controller.OnBoardChanged += HandleBoardChanged;
+            controller.OnDeadlockResolved += HandleDeadlockResolved;
+        }
+
+        private void OnDisable()
+        {
+            controller.OnBoardReady -= HandleBoardReady;
+            controller.OnBoardChanged -= HandleBoardChanged;
+            controller.OnDeadlockResolved -= HandleDeadlockResolved;
+        }
+
+        private void HandleBoardReady(Board readyBoard)
+        {
+            Bind(readyBoard);
+            Redraw();
+        }
+
+        private void HandleBoardChanged(BlastResult result) => ApplyBlast(result);
+
+        private void HandleDeadlockResolved() => Redraw();
+
         /// <summary>
         /// Attaches the view to a board: builds the pool, sizes the internal arrays and frames the camera.
         /// Call once per board; <see cref="Redraw"/> afterwards for every change.
@@ -102,19 +133,25 @@ namespace BlastGame.Game
                 -(board.Rows - 1) * 0.5f * CellSize,
                 0f);
 
-            blockAt = new BlockView[board.CellCount];
+            // Built once. A restart regenerates the same board object rather than replacing it, so
+            // rebuilding here would strand a whole board's worth of objects in the scene and allocate a
+            // second set - a restart has to cost nothing.
+            if (pool == null)
+            {
+                blockAt = new BlockView[board.CellCount];
 
-            // No move can involve more blocks than the board has cells: every move is identified by the
-            // cell it lands on, and no two land on the same one (BlastResult).
-            movingBlocks = new BlockView[board.CellCount];
+                // No move can involve more blocks than the board has cells: every move is identified by
+                // the cell it lands on, and no two land on the same one (BlastResult).
+                movingBlocks = new BlockView[board.CellCount];
 
-            fallAnimator = new FallAnimator(board.CellCount, fallSpeed);
+                fallAnimator = new FallAnimator(board.CellCount, fallSpeed);
 
-            // The board can never show more blocks than it has cells, and Redraw returns every block
-            // before it rents any, so the peak is exactly CellCount. The spare row is headroom for a
-            // block held briefly by an effect later, and it makes an off-by-one impossible rather than
-            // merely unlikely.
-            pool = new BlockPool(blockPrefab, transform, board.CellCount + board.Cols);
+                // The board can never show more blocks than it has cells, and Redraw returns every block
+                // before it rents any, so the peak is exactly CellCount. The spare row is headroom for a
+                // block held briefly by an effect later, and it makes an off-by-one impossible rather
+                // than merely unlikely.
+                pool = new BlockPool(blockPrefab, transform, board.CellCount + board.Cols);
+            }
 
             FitCamera();
         }

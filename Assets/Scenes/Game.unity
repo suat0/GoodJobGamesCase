@@ -258,7 +258,6 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier:
   level: {fileID: 11400000, guid: 12cc7596f9f74c01923ed8cc9deeb544, type: 2}
-  boardView: {fileID: 1000000004}
 --- !u!114 &1000000004
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -271,6 +270,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5832f2c5d0794d72ba16dc54a1adfff0, type: 3}
   m_Name:
   m_EditorClassIdentifier:
+  controller: {fileID: 1000000003}
   blockPrefab: {fileID: 4100000000000000004, guid: 99f52ae781794b25b09df4aa05bcfdc6, type: 3}
   colorSprites:
   - defaultIcon: {fileID: 21300000, guid: f572b6e2be56041aca5f7fd3a6581220, type: 3}
