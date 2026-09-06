@@ -34,6 +34,8 @@ namespace BlastGame.Core
         /// </summary>
         private readonly GroupFinder groupFinder;
 
+        private readonly BoardConfig config;
+
         public int Rows { get; }
         public int Cols { get; }
         public int CellCount => cells.Length;
@@ -42,23 +44,20 @@ namespace BlastGame.Core
         /// Owned by the caller. <c>new Random(seed)</c> for a reproducible board, <c>new Random()</c>
         /// for a fresh one.
         /// </param>
-        public Board(int rows, int cols, Random rng)
+        public Board(BoardConfig config, Random rng)
         {
-            // The 2-10 range the case document specifies is an authoring constraint and is enforced
-            // in LevelConfig. Core only rejects what it genuinely cannot represent, so an oversized
-            // board still runs - which is also what makes the document's own N=12 example playable.
-            if (rows < 1) throw new ArgumentOutOfRangeException(nameof(rows), rows, "Board needs at least one row.");
-            if (cols < 1) throw new ArgumentOutOfRangeException(nameof(cols), cols, "Board needs at least one column.");
+            config.Validate();
 
+            this.config = config;
             this.rng = rng ?? throw new ArgumentNullException(nameof(rng));
 
-            Rows = rows;
-            Cols = cols;
+            Rows = config.Rows;
+            Cols = config.Cols;
 
             // CellType.Empty is 0, so this is already a valid empty board - no initialisation pass.
-            cells = new Cell[rows * cols];
+            cells = new Cell[Rows * Cols];
 
-            groupFinder = new GroupFinder(rows, cols);
+            groupFinder = new GroupFinder(config);
         }
 
         /// <summary>
@@ -71,18 +70,15 @@ namespace BlastGame.Core
         /// always at least two adjacent coloured cells, which is what shuffle needs to be able to work.
         /// One placement rule buys the whole chain (DECISIONS.md, Karar 8).
         /// </remarks>
-        /// <param name="boxCount">
-        /// A request, not a promise: silently clamped to what the board can hold under the rule above.
-        /// Nothing reads this number afterwards - the objective counts live Boxes on the board instead,
-        /// so a clamp cannot make a level unwinnable.
-        /// </param>
-        public void Generate(int colorCount, int boxCount)
+        /// <remarks>
+        /// <c>BoxCount</c> is a request, not a promise: silently clamped to what the board can hold
+        /// under the rule above. Nothing reads that number afterwards - the objective counts live Boxes
+        /// on the board instead - so a clamp cannot make a level unwinnable.
+        /// </remarks>
+        public void Generate()
         {
-            // Colours are stored in a byte, so the range has to fit one.
-            if (colorCount < 1 || colorCount > 256)
-                throw new ArgumentOutOfRangeException(nameof(colorCount), colorCount, "Colour count must be in [1, 256].");
-            if (boxCount < 0)
-                throw new ArgumentOutOfRangeException(nameof(boxCount), boxCount, "Box count cannot be negative.");
+            int colorCount = config.ColorCount;
+            int boxCount = config.BoxCount;
 
             // Uniform per cell, not a balanced deck. A deck would even out the starting colours, but
             // refills after the first blast are uniform anyway, so the guarantee would hold for exactly
@@ -132,6 +128,9 @@ namespace BlastGame.Core
 
         /// <summary>Size of the group a cell belongs to; 0 for Empty and Box cells.</summary>
         public int GroupSizeAt(int index) => groupFinder.GroupSizeAt(index);
+
+        /// <summary>Icon tier for a cell: 0 default, 1/2/3 the A/B/C icons.</summary>
+        public int TierAt(int index) => groupFinder.TierAt(index);
 
         /// <summary>Whether tapping this cell would blast a group.</summary>
         public bool IsBlastable(int index) => groupFinder.IsBlastable(index);

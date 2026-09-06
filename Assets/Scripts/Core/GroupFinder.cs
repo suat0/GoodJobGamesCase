@@ -27,6 +27,12 @@ namespace BlastGame.Core
         private readonly int rows;
         private readonly int cols;
 
+        // Fixed for the lifetime of the board, exactly like rows and cols. Passing them to Recalculate
+        // instead would mean storing them anyway, since TierAt is asked after the scan, not during it.
+        private readonly int thresholdA;
+        private readonly int thresholdB;
+        private readonly int thresholdC;
+
         /// <summary>Group each cell belongs to, or <see cref="NoGroup"/> for Empty and Box cells.</summary>
         private readonly int[] groupIdOf;
 
@@ -50,13 +56,16 @@ namespace BlastGame.Core
         /// </summary>
         public int LargestGroupSize { get; private set; }
 
-        public GroupFinder(int rows, int cols)
+        public GroupFinder(BoardConfig config)
         {
-            if (rows < 1) throw new ArgumentOutOfRangeException(nameof(rows));
-            if (cols < 1) throw new ArgumentOutOfRangeException(nameof(cols));
+            config.Validate();
 
-            this.rows = rows;
-            this.cols = cols;
+            rows = config.Rows;
+            cols = config.Cols;
+
+            thresholdA = config.ThresholdA;
+            thresholdB = config.ThresholdB;
+            thresholdC = config.ThresholdC;
 
             int cellCount = rows * cols;
 
@@ -145,6 +154,34 @@ namespace BlastGame.Core
         {
             int groupId = groupIdOf[cellIndex];
             return groupId != NoGroup && groupSizes[groupId] >= MinBlastableSize;
+        }
+
+
+        /// <summary>
+        /// Which icon a cell shows: 0 default, 1/2/3 the A/B/C icons. Empty and Box cells report 0.
+        /// </summary>
+        /// <remarks>
+        /// Derived on read rather than stored. The group data behind it costs a full flood fill and is
+        /// worth caching; this is three comparisons and is not. Keeping it as a fourth array would only
+        /// add a value that has to be kept in sync, and getting that wrong shows up as a wrong sprite -
+        /// a bug nobody notices by looking at the board.
+        /// <para>
+        /// The comparisons are strictly greater and run high to low, so a size equal to a threshold
+        /// stays on the tier below it. Example 1 in the case document contradicts itself here (it lists
+        /// C=9 and then says "more than 10"); Example 2 is consistent, so &gt; C is the rule.
+        /// </para>
+        /// </remarks>
+        public int TierAt(int cellIndex)
+        {
+            int groupId = groupIdOf[cellIndex];
+            if (groupId == NoGroup) return 0;
+
+            int size = groupSizes[groupId];
+
+            if (size > thresholdC) return 3;
+            if (size > thresholdB) return 2;
+            if (size > thresholdA) return 1;
+            return 0;
         }
 
         /// <summary>

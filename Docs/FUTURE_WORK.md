@@ -23,6 +23,9 @@ Bu projede verdiğimiz kararların çoğu **zaten senior kararlarıydı** — am
 | Collider + raycast | Karar 11 |
 | Granüler assembly bölünmesi | Karar 12 |
 | `visitedStamp` optimizasyonu | Karar 3 |
+| Knuth selection sampling (Algoritma S) | Karar 18 |
+| Dengeli renk destesi | Karar 19 |
+| Box sayısı için sayaç field'ı | Karar 20 |
 
 Hepsi **"yapabilirdim ama gerekmiyor"** kararlarıydı ve bu refleks deneyimle gelir.
 
@@ -83,7 +86,7 @@ Bunlar bir **takımın** ihtiyacı, tek kişilik bir case'in değil.
 | **Performans regresyon testleri** (Unity Performance Testing) | "Bu commit allocation getirdi mi" | Kurulumu case'in kendisinden uzun sürer |
 | **Roslyn analyzer + `.editorconfig`** | Stil ve hata kurallarını derleyici seviyesinde zorlar | Takımda kritik, tek kişide gereksiz |
 | **Analytics + crash SDK** | Ürün gereksinimi | Case gereksinimi değil |
-| **Code coverage eşiği** | Test disiplini | 8 testimiz **bilinçli seçilmiş kritik davranışlar.** Yüzde hedefi, değerli testler yerine kolay testler yazmaya iter. |
+| **Code coverage eşiği** | Test disiplini | 9 testimiz **bilinçli seçilmiş kritik davranışlar.** Yüzde hedefi, değerli testler yerine kolay testler yazmaya iter. |
 
 ---
 
@@ -93,7 +96,7 @@ Bunlar bir **takımın** ihtiyacı, tek kişilik bir case'in değil.
 
 **`#nullable enable`** — Null hataları derleme zamanında yakalanır. Unity'de hâlâ sürtünmeli (motor API'leri anotasyonlu değil) ve bizim Core'da referans tipi neredeyse yok. Kazanç düşük.
 
-**`in` parametreleri / `readonly struct`** — `Cell` küçük olduğu için kopyalama maliyeti önemsiz; `readonly` yapılamaz çünkü mutasyon gerekiyor. Uygulanabilir değil.
+**`in` parametreleri / `readonly struct`** — `Cell` için uygulanabilir değil: küçük olduğu için kopyalama maliyeti önemsiz ve mutasyon gerektiği için `readonly` olamaz. *(Not: `BoardConfig` `readonly struct` — orada mutasyon yok ve amaç performans değil, değişmezlik.)*
 
 ### 💡 Ucuz ve değerli — eklenmeye değer
 
@@ -112,12 +115,16 @@ Ekranda gösterilecekler: grup id'leri, grup boyutları, deadlock durumu, oturmu
 **Değeri:** Hem geliştirmeyi hızlandırır hem de video/screenshot ile "sistem gerçekten çalışıyor" göstermeni sağlar. Özellikle deadlock+shuffle'ı görsel olarak kanıtlamak için.
 **Maliyet:** ~2 saat.
 
-#### 3. `[Conditional]` invariant assert'leri
+#### 3. `[Conditional]` invariant assert'leri — ✅ **kısmen uygulandı**
 ```csharp
 [Conditional("UNITY_ASSERTIONS")]
 static void AssertInBounds(int r, int c) { ... }
 ```
-Kontrol edilecekler: satır/sütun aralıkta mı, grup boyutu toplamı hücre sayısıyla tutarlı mı, Box health 0–2 arasında mı.
+Faz 1'de `GroupFinder.AssertMatchesBoard` ile başladı: Karar 13/A2'nin bıraktığı tek açığı
+(`GroupFinder` boyutları constructor'dan biliyor ama veriyi ayrı alıyor → ikisi ayrışabilir) kapatıyor.
+Yani artık "eklenebilir bir cila" değil, bir mimari kararın tamamlayıcısı.
+
+Kalan adaylar: satır/sütun aralıkta mı, grup boyutu toplamı hücre sayısıyla tutarlı mı, Box health 0–2 arasında mı.
 **Değeri:** Release build'de **tamamen kaybolurlar** → sıfır maliyet. Geliştirmede erken hata yakalama.
 **Maliyet:** ~1 saat.
 
@@ -199,6 +206,6 @@ Fark şu: birincisi kalıp bildiğini gösterir, ikincisi **kalıbın ne zaman g
 | `#nullable enable` | Yok | Kazanç düşük (Core'da referans tipi yok) |
 | **`ProfilerMarker`** | **Eklenebilir** | **Ucuz + case vurgusuyla örtüşüyor** |
 | **Debug overlay** | **Eklenebilir** | **Deadlock/shuffle'ı görsel kanıtlar** |
-| **`[Conditional]` assert** | **Eklenebilir** | **Release'de sıfır maliyet** |
+| **`[Conditional]` assert** | **Başlandı (Faz 1)** | **Release'de sıfır maliyet; Karar 13/A2'nin açığını kapatıyor** |
 | Booster / özel blok / juice | Yok | **Eklemek aktif zarar** — istenmeyen iş |
 | Renk körlüğü notu | README'ye | Bedava artı, kod gerekmiyor |

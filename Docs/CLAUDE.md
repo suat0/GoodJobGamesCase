@@ -48,8 +48,11 @@ Tıklanan hücredeki **görsel** blok hâlâ animasyondaysa tıklama yutulur.
 Core "kim havada" bilgisini **hiç taşımaz.** Bu tek görsel temas noktası bilinçli olarak View'dadır.
 
 ### 4. Sadelik disiplini
-- Core en fazla 4-6 dosya
 - **Event bus yok, DI container yok, command pattern yok, gereksiz interface yok**
+- **Yeni bir Core tipi ancak üç şartı birden geçerse açılır** (Karar 17):
+  (a) durumu yok ya da kendi durumunun tek sahibi, (b) birden fazla çağıranı var **ve** paylaşamıyorlar,
+  (c) adı gerçek bir kavram. `Utils`/`Helpers`/`Manager` adı koymak zorunda kalıyorsan ortada kavram yok.
+  *(Bu madde eskiden "Core en fazla 4-6 dosya" idi; dosya sayısı yanlış şeyi ölçüyordu.)*
 - Interface sadece gerçekten ikinci bir implementasyon olacaksa yazılır
 - **LINQ yok** (enumerator allocation → GC)
 - Oyun sırasında **sıfır allocation** hedefi
@@ -71,6 +74,31 @@ Cell[] cells;                              // 1D, M*N
 int Index(int r, int c) => r * Cols + c;   // AggressiveInlining
 ```
 
+`Cell` yalnızca iki meşru şekle sahip; constructor yerine **factory** kullanılır
+(üç alanı alan bir constructor "renkli Box" gibi imkânsız kombinasyonlara izin verirdi):
+```csharp
+Cell.MakeColor(byte color)
+Cell.MakeBox(byte health = Cell.BoxMaxHealth)
+Cell.Empty                                 // == default(Cell)
+```
+
+### `BoardConfig` — Core'un kurulum verisi
+```csharp
+public readonly struct BoardConfig {
+    Rows, Cols, ColorCount, ThresholdA, ThresholdB, ThresholdC, BoxCount
+    public void Validate();   // fırlatır
+}
+```
+`Board(BoardConfig, Random)`, `GroupFinder(BoardConfig)`, `Generate()` parametresiz.
+`LevelConfig` (ScriptableObject) Core'a **giremez**; değerlerini `BoardConfig`'e kopyalar —
+Core ↔ Game arasındaki tek dönüşüm noktası. `MoveLimit` ve `Seed` burada **yok** (tahtanın şeklini
+belirlemiyorlar).
+
+### `Grid` — saf index matematiği
+`Grid.Index/RowOf/ColOf/TryStep`, durumsuz. Hem `Board` hem `GroupFinder` kullanır.
+**`TryStep` sınırı `(r, c)` üzerinden kontrol eder**; 1D index'te `±1` satır sınırını aşıp
+satır sonunu bir üst satırın başına bağlar.
+
 ### ⚠️ Kritik konvansiyonlar
 - **Satır 0 = tahtanın ALT satırı.** Unity world Y yukarı arttığı için (`worldY = origin.y + row * cellSize`). Gravity index azalan yöne düşer, yeni bloklar en yüksek index'ten girer.
 - **Struct kopya tuzağı:**
@@ -80,6 +108,8 @@ int Index(int r, int c) => r * Cols + c;   // AggressiveInlining
   ```
 - Boş hücre için sentinel renk **yok** — ayrı `CellType.Empty` kullanılır (Box'ın rengi olmadığı için bu şart).
 - `groupIdOf`, `groupSizes`, `stack`, `boxStamp` dizileri **sınıf field'ı, bir kez alloc.** Her taramada yeniden ayrılmaz.
+- **`groupIdOf` `-1` ile doldurulur, `Array.Clear` ile değil** — 0 geçerli bir grup id'si, "grup yok" ondan ayrı bir değer olmak zorunda.
+- **`GroupFinder` tahtaya referans TUTMAZ.** `Recalculate(ReadOnlySpan<Cell>)` ile veriyi her çağrıda alır; sadece kendi scratch dizilerinin sahibidir (Karar 13/A2).
 
 ---
 
@@ -89,8 +119,8 @@ int Index(int r, int c) => r * Cols + c;   // AggressiveInlining
 Assets/
   Scripts/
     Core/                    <- asmdef: No Engine References ✔
-      Cell.cs, Board.cs, GroupFinder.cs,
-      GravityResolver.cs, DeadlockResolver.cs, BlastResult.cs
+      Cell.cs, Grid.cs, BoardConfig.cs, Board.cs,
+      GroupFinder.cs, GravityResolver.cs, DeadlockResolver.cs, BlastResult.cs
     Game/                    <- asmdef: Core'a bağımlı
       LevelConfig.cs, GameController.cs, BoardView.cs,
       BlockView.cs, BlockPool.cs, InputHandler.cs, AudioController.cs
@@ -120,11 +150,22 @@ Assets/
 
 ---
 
+## İnvariant — tahta asla bayat grup verisiyle görülmez
+
+Tahtayı değiştiren **her** metot `RecalculateGroups()` çağırarak biter (`Generate()` dahil).
+Çağıranın hatırlaması gereken bir adım yok.
+
+---
+
 ## Algoritma notları
 
 ### Grup bulma
 Her değişiklikten sonra **tam tarama** (100 hücre, mikrosaniyeler). Tek `RecalculateGroups()` üç işi görür: patlatılabilirlik, ikon seviyeleri, deadlock tespiti (en büyük grup < 2).
 **Iterative DFS**, kendi `int[] stack` + `top` index'i ile. Recursion yok, `Queue<T>` yok.
+
+⚠️ **Hücre push edilirken işaretlenir, pop edilirken değil.** Pop'ta işaretlenseydi aynı hücreyi
+dört komşusu da itebilirdi ve stack hücre sayısını aşabilirdi. Push'ta işaretleme her hücrenin en
+fazla bir kez itilmesini garanti eder → `stack` boyutu tam olarak `M*N`.
 
 ### Box hasarı — damga tekniği
 ```csharp
@@ -199,7 +240,7 @@ public event Action OnDeadlockResolved;           // BoardView, AudioController
 
 ## Kapsam
 
-**Dahil:** blast, ikon seviyeleri, Box Obstacle, gravity, deadlock + akıllı shuffle, hedef ("tüm Box'ları kır"), hamle limiti, skor, kazanma/kaybetme ekranı, ses, Box kırılma partikülü, pooling, sprite atlas, 8 unit test, README + profiler ölçümleri.
+**Dahil:** blast, ikon seviyeleri, Box Obstacle, gravity, deadlock + akıllı shuffle, hedef ("tüm Box'ları kır"), hamle limiti, skor, kazanma/kaybetme ekranı, ses, Box kırılma partikülü, pooling, sprite atlas, 9 unit test, README + profiler ölçümleri.
 
 **Hariç:** çoklu seviye/progression, çoklu dokunuş, level editor, ulaşılabilirlik analizi, özel bloklar (roket/bomba), zincirleme kombo, kayıt/yükleme, lokalizasyon.
 
@@ -233,6 +274,7 @@ Bu **ayrı bir mod değil**; hedef bir veridir, kod dalı değil.
 5. Doküman tutarsızlıkları ve nasıl yorumlandığı
 6. **"En üst satıra Box konmaz"** kısıtının gerekçesi (dokümanda yok, biz ekledik)
 7. Kalıcı boşluk davranışı ve neden yapısal kilit oluşturmadığı
+7b. Core'un Unity olmadan derlenip çalıştırılabildiği (motordan bağımsızlığın somut kanıtı)
 8. Kapsam dışı bırakılanlar ve nedenleri
 
 > **Ton notu:** "Performansı önemsedim" demek yerine, *"bu ölçekte gerekmiyor ama şu ölçekte gerekirdi, maliyeti de sıfırdı"* demek çok daha güçlü. Elenen optimizasyonları yazmak, gereksiz olanları uygulamaktan daha iyi bir sinyaldir.

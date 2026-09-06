@@ -38,36 +38,46 @@ Amaç: proje ayakta, mimari sınırlar derleyici tarafından zorlanıyor.
 
 ---
 
-## Faz 1 — Core: tahta ve grup bulma
+## Faz 1 — Core: tahta ve grup bulma ✅
 
-### `feat(core): cell data model and board container`
-- `Cell.cs`: `CellType` enum (`: byte`) + `Cell` struct
-- `Board.cs`: `cells` dizisi, `Rows`/`Cols`, `Index(r,c)`, `InBounds`, komşu erişimi
-- **Yorum notları:** satır 0 = alt; struct kopya tuzağı
+### `feat(core): cell data model and board container` ✅
+- `Cell.cs`: `CellType` enum (`: byte`) + `Cell` struct + `MakeColor`/`MakeBox`/`Empty` factory'leri
+- `Grid.cs`: saf index matematiği (`Index`, `RowOf`, `ColOf`, `TryStep`) — Karar 17
+- `Board.cs`: `cells` dizisi, `Rows`/`Cols`, `Index`, `InBounds`, `TryNeighbor`, `CellAt`, `ToString()`
+- **Yorum notları:** satır 0 = alt; struct kopya tuzağı; dizi indekslemede metot çağrısının kopya üretmediği
 - `System.Random` constructor'dan enjekte edilir
 
-### `feat(core): board generation with top-row box constraint`
-- Kısıtlı rastgele üretim
-- **En üst satıra Box konmaz** (gerekçe koda yorum olarak, detay `DECISIONS.md` Karar 8)
-- `BoxCount` yerleştirilemezse sessizce düşürülür
+### `feat(core): board generation with top-row box constraint` ✅
+- **En üst satıra Box konmaz** → uygun hücreler `[0, (Rows-1)*Cols)` bitişik öneki, filtreleme gerekmiyor
+- **Kısmi Fisher-Yates** ile tekrarsız yerleştirme (Karar 18)
+- Renkler hücre başına düzgün rastgele (Karar 19)
+- `BoxCount` kapasiteye kırpılır; hedef bu sayıyı okumaz → `RemainingBoxes()` tahtadan sayar (Karar 20)
 
-### `feat(core): iterative DFS group finder`
-- `GroupFinder.cs`: `groupIdOf`, `groupSizes`, `stack` — hepsi **sınıf field'ı, bir kez alloc**
-- `RecalculateGroups()`: tam tarama, ortogonal komşuluk, min grup 2
-- `visited` temizliği `Array.Clear` ile
+### `feat(core): iterative DFS group finder` ✅
+- `GroupFinder.cs`: `groupIdOf`, `groupSizes`, `stack` — **sınıf field'ı, bir kez alloc**
+- `Recalculate(ReadOnlySpan<Cell>)` — tahtaya referans tutmaz (Karar 13/A2)
+- `groupIdOf` **`-1` ile doldurulur** (`Array.Clear` değil — 0 geçerli bir grup id'si)
+- **Push'ta işaretle, pop'ta değil** → stack boyutu `M*N` ile sınırlı
+- `LargestGroupSize` bedava geliyor (deadlock tespiti Faz 3'te bunu okuyacak)
 - LINQ ve recursion **yok**
 
-### `feat(core): icon tier resolution from group size`
-- `> C` → 3, `> B` → 2, `> A` → 1, aksi → default
-- Eşikler `LevelConfig`'ten (Core'a düz değer olarak geçer, `ScriptableObject` Core'a girmez)
+### `feat(core): icon tier resolution from group size` ✅
+- `BoardConfig.cs`: `readonly struct` + `Validate()` (Karar 21)
+- `TierAt`: `> C` → 3, `> B` → 2, `> A` → 1, aksi → default — **saklanmaz, okunurken türetilir** (Karar 14)
+- Eşikler `GroupFinder` constructor'ında; `Board` tek satır forward eder
 
 ### `test(core): group finding, adjacency and icon tiers`
 - **Test 1:** ikon eşikleri sınır değerlerinde (`A`, `A+1`, `B`, `B+1`, `C`, `C+1`)
 - **Test 3:** minimum grup 2 — tek blok patlamaz
 - **Test 4:** komşuluk ortogonal — çapraz aynı renk gruba dahil değil
+- **Test 9:** satır sarması yok — satır sonu, bir üst satırın başıyla birleşmiyor
 - Test yardımcısı: string'den tahta kuran `BoardBuilder` (okunabilir test verisi)
 
-**Faz 1 çıktısı:** Tahta kuruluyor, gruplar doğru bulunuyor, testler yeşil. Unity'de hâlâ hiçbir şey görünmüyor.
+**Faz 1 çıktısı:** Tahta kuruluyor, gruplar doğru bulunuyor, ikonlar çözülüyor, testler yeşil.
+Unity'de hâlâ hiçbir şey görünmüyor.
+
+> **Yan bulgu:** Core motordan bağımsız olduğu için üç dosya düz C# olarak (`mcs`/`dotnet`) Unity
+> açılmadan derlenip çalıştırılabiliyor. Karar 1'in en somut faydası bu — README'ye girmeye değer.
 
 ---
 
@@ -114,7 +124,7 @@ Amaç: proje ayakta, mimari sınırlar derleyici tarafından zorlanıyor.
 - **Test 6:** ~200 farklı tohum, her seferinde geçerli grup oluştuğu doğrulanır
 - **Test 7:** shuffle öncesi/sonrası renk sayıları birebir aynı
 
-**Faz 3 çıktısı:** Core tamamen bitti, 7 test yeşil. Unity hâlâ açılmadı.
+**Faz 3 çıktısı:** Core tamamen bitti, 8 test yeşil. Unity hâlâ açılmadı.
 
 ---
 
@@ -220,7 +230,7 @@ Amaç: proje ayakta, mimari sınırlar derleyici tarafından zorlanıyor.
 ## Kontrol listesi (teslim öncesi)
 
 - [ ] Core'da tek bir `using UnityEngine` yok (asmdef zorluyor)
-- [ ] 8 test yeşil
+- [ ] 9 test yeşil
 - [ ] 2×2, 10×10, K=1, K=6, Box=0 konfigürasyonları çalışıyor
 - [ ] Oynanış sırasında GC Alloc = 0
 - [ ] Tahta tek draw call

@@ -38,9 +38,13 @@ Bu ilkeden türeyen bir kural: **aynı sonuca daha pahalı yoldan gitmek optimiz
 ### Seçilen: C — sıkı sadelik disipliniyle
 
 Somut sınırlar (bunlar aşılmamalı):
-- Core en fazla 4-6 dosya
 - **Event bus yok, DI container yok, command pattern yok**
 - Interface sadece gerçekten ikinci bir implementasyon olacaksa yazılır
+- Yeni bir Core tipi ancak Karar 17'deki üç şartı birden geçerse açılır
+
+> **Not (Karar 17):** Burada başlangıçta "Core en fazla 4-6 dosya" yazıyordu. Dosya sayısı,
+> asıl kaygının (soyutlama şişkinliği) kaba bir vekiliydi ve yanlış şeyi ölçüyordu — `Grid` gibi
+> bir ayrım karmaşıklığı azaltıyor, artırmıyor. Sayı yerine gerçek ölçüt Karar 17'de tanımlandı.
 
 Amaç: C'nin faydasını (test + net veri akışı) alıp maliyetini (soyutlama şişkinliği) ödememek.
 
@@ -134,7 +138,7 @@ Tek `RecalculateGroups()` üç işi birden görüyor:
 - Flood fill **iterative + DFS**, kendi `int[] stack` + `top` index'imizle
 - `groupIdOf`, `groupSizes`, `stack` dizileri **sınıf field'ı, bir kez alloc** — her taramada yeniden ayrılmıyor
 - **LINQ yok** (`Where`/`Select` her çağrıda enumerator allocation → GC spike)
-- `visited` temizliği: **`Array.Clear`** kullanılacak
+- `groupIdOf` sıfırlaması: **`-1` ile doldurulur, `Array.Clear` ile değil.** `Array.Clear` sıfır yazar, ama **0 geçerli bir grup id'si** — "grup yok" ile "grup 0" aynı değere düşerse `GroupSizeAt` sessizce yanlış cevap verir. Alternatif (id'leri 1'den başlatıp 0'ı sentinel yapmak) `memset` kazandırırdı ama `+1/-1` bookkeeping'ini her erişime yayardı; Karar 2b'deki sentinel gerekçesinin aynısı.
 
 ### Alt konu — BFS vs DFS
 Flood fill hangi sırayla gezerse gezsin **bağlı bileşenin tamamını gezmek zorunda.** Erken çıkış yok, çünkü ikon seviyeleri için tam boyut lazım. İkisi de O(grup boyutu).
@@ -592,6 +596,49 @@ Ayrıca test assembly'si zaten gerekiyordu → ikinci asmdef'in ek maliyeti sıf
 
 ### Seçilen: B
 
+```
+Assets/
+  Scripts/
+    Core/                    <- asmdef: No Engine References ✔
+      Cell.cs
+      Grid.cs
+      BoardConfig.cs
+      Board.cs
+      GroupFinder.cs
+      GravityResolver.cs
+      DeadlockResolver.cs
+      BlastResult.cs
+    Game/                    <- asmdef: Core'a bağımlı
+      LevelConfig.cs
+      GameController.cs
+      BoardView.cs
+      BlockView.cs
+      BlockPool.cs
+      InputHandler.cs
+      AudioController.cs
+      UI/
+  Tests/
+    EditMode/                <- asmdef: Core'a bağımlı
+  Art/                       <- 26 PNG + Sprite Atlas
+  Audio/
+  Prefabs/
+  Scenes/
+```
+
+Core 8 dosya. Karar 1'de başlangıçta "en fazla 4-6" yazıyordu; `Grid` ve `BoardConfig` eklenirken
+o sınırın yanlış şeyi ölçtüğü ortaya çıktı ve yerine Karar 17'deki üç şartlı ölçüt kondu.
+
+**Uyarı:** Core'da `UnityEngine.Random` da yasak. Rastgelelik `System.Random` ile **enjekte** edilecek → testte sabit tohumla shuffle'ın deterministik testi yazılabiliyor.
+
+### Alt konu — DI vs Singleton (kavram düzeltmesi)
+
+- **Singleton:** sınıf bağımlılığını kendisi **alır** (`Random.Instance.Next()`). Testte global'e müdahale gerekir; testler aynı örneği paylaşır → biri diğerinin durumunu bozar, sıraya duyarlı hale gelirler. **DI'ın zıddıdır.**
+- **DI:** bağımlılık **verilir** (`new Board(config, new Random(42))`). Test kendi örneğini kurar, kimseyle paylaşmaz.
+- `Board` içinde `new Random()` yazmak singleton değil ama yine de kötü: tohumu dışarıdan kontrol edemezsin.
+
+> **Kural: bir sınıf kendi rastgeleliğini, zamanını veya dosya erişimini kendisi yaratmasın.** Bunlar dışarıdan gelmeli, yoksa test edilemezler.
+
+---
 
 ## Karar 13 — `GroupFinder` veriye nasıl erişir?
 
@@ -619,9 +666,15 @@ Flood fill'in üç geçici diziye ihtiyacı var (`groupIdOf`, `groupSizes`, `sta
 ```csharp
 // Owns only its scratch buffers; the board data arrives per call. Nothing is retained,
 // so nothing can go stale.
-public GroupFinder(int rows, int cols)
-public void Recalculate(ReadOnlySpan<Cell> cells, int thresholdA, int thresholdB, int thresholdC)
+public GroupFinder(BoardConfig config)
+public void Recalculate(ReadOnlySpan<Cell> cells)
 ```
+
+**Uygulama sırasında düzeltildi:** ilk taslakta eşikler `Recalculate`'e parametre olarak geçiyordu.
+Yanlıştı — `TierAt` taramadan **sonra** çağrılıyor, yani eşiklerin zaten saklanmış olması gerekiyor.
+Parametre yapmak onları hem her çağrıda geçirmek hem de field'da tutmak demek olurdu. Eşikler
+`rows`/`cols` ile aynı kategoride: seviye boyunca sabit → constructor'a ait. Karar 21'de bunların
+hepsi `BoardConfig`'e toplandı.
 
 `rows`/`cols` tutarsızlığı `[Conditional("UNITY_ASSERTIONS")]` bir assert ile kilitlenir (`cells.Length == rows * cols`) → release build'de tamamen kaybolur.
 
@@ -764,44 +817,192 @@ Bedava gelen bir yan fayda var: shuffle yolu artık oyunun **ilk karesinde** de 
 
 > **Ders:** Yeni bir uç durumla karşılaşınca ilk soru "bunu nasıl önlerim" değil, **"bunu zaten çözen bir yolum var mı"** olmalı. Karar 8'de (C + B birlikte) tersini yapmıştık — orada iki mekanizma *farklı işler* görüyordu (biri tasarım garantisi, diğeri savunma önlemi). Burada ikisi de aynı işi görürdü.
 
+---
+
+## Karar 17 — Yeni bir Core tipi ne zaman açılır?
+
+Karar 15'i uygularken ortaya çıktı: komşuluk matematiğinin **iki müşterisi** var — `Board` (Box hasarı)
+ve `GroupFinder` (flood fill). Ama Karar 13/A2 gereği `GroupFinder`, `Board`'a referans tutmuyor.
+
+### Seçenekler
+
+| | Yaklaşım | Sorun |
+|---|---|---|
+| A | Her ikisi kendi 4'lük döngüsünü yazsın | Aynı off-by-one iki kopyada. Karar 15'te **tam da bu formülü** "sessiz bug üretir, mevcut testler yakalamaz" diye işaretledik |
+| B | `GroupFinder`, `Board`'a referans tutsun | Karar 13'ü geri alır |
+| C | `Board`'a `public static` metotlar | Çalışır, ama `GroupFinder` yine `Board` tipini tanır — A2'nin "birbirlerini hiç tanımıyorlar" kazancı kısmen gider |
+| D | Ayrı `Grid.cs` — durumsuz saf fonksiyonlar | Karar 1'deki "en fazla 4-6 dosya" sınırı aşılır |
+
+### Seçilen: D — ve sınırın kendisi değiştirildi
+
+Karar 1'deki dosya sayısı sınırının amacı **soyutlama şişkinliğini** önlemekti: gereksiz interface,
+tek implementasyonlu factory, katman katman indirection. `Grid` bunların hiçbiri değil — 25 satır,
+durumsuz, dört saf fonksiyon, tek bir formülün tek evi. Ayrıca saf fonksiyon olduğu için **doğrudan
+test edilebiliyor**: Test 9 (satır sarması) artık flood fill üzerinden dolaylı kurulmak zorunda değil.
+
+Sayı yanlış şeyi ölçüyordu. Yerine geçen ölçüt:
+
+> **Bir tipi ayırmak için üç şart birden gerekir:**
+> 1. Durumu yok, ya da kendi durumunun tek sahibi
+> 2. Birden fazla çağıranı var **ve** bunlar yapısal olarak paylaşamıyor
+> 3. Adı gerçek bir kavram — `Grid`, `GroupFinder`, `BoardConfig` gibi.
+>    `Helpers`, `Utils`, `Manager`, `Extensions` gibi bir ad koymak zorunda kalıyorsan ortada kavram
+>    yok, sadece kod taşınmış demektir.
+
+Üçüncü madde en işe yarayanı: adın kendisi testtir.
+
+**İkinci şart mekanik değil.** Faz 3'te `DeadlockResolver` de Fisher-Yates kullanacak, yani ikinci
+çağıran var — ama ortak bir `Shuffle<T>` çıkarmıyoruz. Fark: `Grid`'de paylaşılan şey **hata üretmesi
+kolay** bir formüldü ve iki çağıran aynı fazdaydı; Fisher-Yates dört satır ve doğru hâli bu dosyada
+zaten yazılı. "İki çağıranı var" tek başına yetmiyor, **"paylaşmamak risk üretiyor mu"** da sorulmalı.
+
+Core'un nihai listesi 8 dosya:
+`Cell.cs`, `Grid.cs`, `BoardConfig.cs`, `Board.cs`, `GroupFinder.cs`, `GravityResolver.cs`,
+`DeadlockResolver.cs`, `BlastResult.cs`
+
+---
+
+## Karar 18 — Box'lar nasıl yerleştirilir?
+
+`boxCount` adet Box'ı, en üst satır hariç, tekrarsız ve rastgele yerleştirmek gerekiyor.
+
+### Seçenekler
+
+| | Yaklaşım | Artı | Eksi |
+|---|---|---|---|
+| A | **Rastgele dene-tut:** hücre seç, doluysa veya üst satırsa tekrar dene | Üç satır | Sonlanma garantisi yok; `boxCount` kapasiteye yaklaştıkça deneme sayısı patlar |
+| B | **Kısmi Fisher-Yates:** uygun index listesini kur, ilk `boxCount` pozisyonu karıştır | Tam `boxCount` adım, tekrar imkânsız, sonlanma garantili | Geçici `int[]` |
+| C | **Düzenli aralıklı** (stride) | Allocation yok | Rastgele değil, her tahtada aynı desen |
+
+### Eleme gerekçeleri
+
+**A elendi — sebebi performans değil, tutarlılık.** Karar 9'da "kör deneme" desenini gerekçeli olarak
+eledik; üretimde geri getirmek README'deki iddiayı zayıflatır. Bir mülakatçının yakalayacağı cinsten
+bir iç çelişki.
+
+**C elendi.** Aynı boyutta her tahtada Box'lar aynı yerlerde çıkar.
+
+### Seçilen: B
+
+```csharp
+for (int i = 0; i < toPlace; i++)
+{
+    int j = i + rng.Next(boxCapacity - i);   // sadece dokunulmamış kuyruk
+    Swap(candidates, i, j);
+    cells[candidates[i]] = Cell.MakeBox();
+}
 ```
-Assets/
-  Scripts/
-    Core/                    <- asmdef: No Engine References ✔
-      Cell.cs
-      Board.cs
-      GroupFinder.cs
-      GravityResolver.cs
-      DeadlockResolver.cs
-      BlastResult.cs
-    Game/                    <- asmdef: Core'a bağımlı
-      LevelConfig.cs
-      GameController.cs
-      BoardView.cs
-      BlockView.cs
-      BlockPool.cs
-      InputHandler.cs
-      AudioController.cs
-      UI/
-  Tests/
-    EditMode/                <- asmdef: Core'a bağımlı
-  Art/                       <- 26 PNG + Sprite Atlas
-  Audio/
-  Prefabs/
-  Scenes/
+
+**Anlatılacak asıl şey "kısmi" olması.** Tam shuffle her pozisyonu yerine oturtur; bize sadece ilk
+`toPlace` tanesi lazım, o yüzden döngü erken duruyor — 90 uygun hücreden 8 Box seçerken 90 değil
+**8 adım.** Bu, seçim (selection) ile permütasyon arasındaki farkı görmek demek.
+
+Bu döngü **öne doğru**, Karar 9'daki kanonik hâl **arkaya doğru** çalışıyor. Aynı algoritma, ters
+uçlardan. Yansızlığı sağlayan şey yön değil, rastgele index'in **yalnızca henüz sabitlenmemiş
+bölgeden** çekilmesi. Bozuk versiyon (`rng.Next(0, n)` her adımda) tam olarak bu invariant'ı ihlal
+ediyor.
+
+### Satır yönü kararının bedava hediyesi
+
+Satır 0 alt ve dizi row-major olduğu için **en üst satır dizinin son `Cols` elemanı** → uygun hücreler
+`[0, (Rows-1)*Cols)` aralığı, yani bitişik bir önek. Filtreleme döngüsü ve `if (row == Rows-1)`
+kontrolü hiç gerekmiyor. *(Karar 5'teki dersin tekrarı: doğru konumlanmış bir konvansiyon, yazılması
+gereken kodu kendiliğinden emiyor.)*
+
+### Değerlendirilip elenen: Knuth selection sampling (Algoritma S)
+
+Uygun hücreleri tek geçişte gezip her birini *(hâlâ gereken / hâlâ kalan)* olasılığıyla almak aynı
+garantileri **geçici dizi olmadan** veriyor, adım sayısı da önceden sabit. Uygulanıp χ² ile doğrulandı,
+sonra B lehine geri alındı.
+
+**Gerekçe:** Fisher-Yates'in doğruluğu bakışta görülür, Algoritma S'inki bir olasılık argümanına
+dayanır. 360 byte'lık, seviye başına bir kez ödenen bir tasarruf için okunabilirlik ve tanıdıklık
+feda edilmez. *(Karar 2'de bit packing'i elerken kullandığımız akıl yürütmenin aynısı.)*
+
+---
+
+## Karar 19 — Renkler nasıl dağıtılır?
+
+- **A — Hücre başına düzgün rastgele** (`rng.Next(colorCount)`)
+- **B — Deste yöntemi:** her renkten eşit sayıda üret, karıştır, dağıt
+- **C — Kısıtlı rastgele:** büyük başlangıç grubu oluşmasın diye komşuyu kontrol et
+
+**Seçilen: A.**
+
+**B elendi** çünkü verdiği garanti **bir hamle sürüyor.** İlk blast'tan sonra boşalan hücreler yine
+`rng.Next(colorCount)` ile doluyor (case "yeni bloklar tahtanın dışında üretilir" diyor, dengeli bir
+havuzdan değil). B, yalnızca ilk karede doğru olan bir invariant kurar ve sonra sessizce bozulur.
+**Tutulmayan bir garanti, hiç verilmemiş garantiden kötüdür.**
+
+**C elendi** çünkü büyük başlangıç grubu bir problem değil — case zaten büyük grupları **ödüllendiriyor**
+(ikon seviyeleri tam olarak bunun için var).
+
+**K=1 uç durumu:** case 1–6 diyor, yani geçerli. Tahtanın tamamı tek dev grup olur. Kod bunu özel durum
+olarak ele almıyor, doğal olarak çalışıyor.
+
+---
+
+## Karar 20 — `boxCount` sığmazsa, hedef hangi sayıyı okur?
+
+`Math.Min(boxCount, kapasite)` ile kırpma bedava geliyor. Asıl soru gizli olan: **hedef ("tüm Box'ları
+kır") hangi sayıyı kullanacak?** `LevelConfig.BoxCount` = 8 iken tahtaya 5 Box sığdıysa ve hedef 8
+beklerse oyun **asla kazanılamaz.**
+
+- **A — `Board` yerleştirilen sayıyı bir field'da tutsun**
+- **B — Hiç sayma, tahtadan türet:** `RemainingBoxes()` hücreleri gezip saysın
+
+### Seçilen: B
+
+Karar 14'ün aynısı. Sayaç, azaltmayı unutabileceğin her kod yolunu (Box kırılması, `Generate()` ile
+yeniden başlatma, ileride eklenecek başka bir silme yolu) bir bug adayına çevirir. Ve o bug **sessiz**:
+ekranda hiçbir şey yanlış görünmez, oyun sadece bitmez ya da erken biter.
+
+**Metot, property değil.** Property "alan erişimi kadar ucuz" vaat eder; O(n) bir iş metot olmalı,
+yoksa döngü içinde çağrılması masum görünür ve O(n²) üretir. .NET'te `Array.Length` property,
+`Enumerable.Count()` metottur — biri saklanmış, diğeri sayıyor.
+
+**Eşik:** her frame çağrılsaydı, ya da tahta 1000×1000 olsaydı sayaç doğru tercih olurdu. Bizde hamlede
+bir kez, 100 hücre.
+
+---
+
+## Karar 21 — `BoardConfig`
+
+Eşikler `GroupFinder`'a taşınınca constructor `Board(int, int, int, int, int, Random)` oldu — arka
+arkaya beş `int`. Bu imzada `thresholdB` ile `thresholdC`'yi ters vermek derleme hatası değil,
+**sessiz bir bug.** `Generate(colorCount, boxCount)` de aynı sorunun küçük hâliydi.
+
+### Seçenekler
+- **A — Parametreleri ekle:** pozisyonel `int` yığını, derleyici yardım edemez
+- **B — `readonly struct BoardConfig`**
+
+### Seçilen: B
+
+Karar 17'nin üç şartını geçiyor: immutable değer, birden fazla çağıran (`Board`, `GroupFinder`,
+ileride `GameController`), ve gerçek bir kavram adı.
+
+```csharp
+public readonly struct BoardConfig {
+    Rows, Cols, ColorCount, ThresholdA, ThresholdB, ThresholdC, BoxCount
+    public void Validate();
+}
 ```
 
-Core 6 dosya — Karar 1'deki "en fazla 4-6" sınırında. İyi işaret.
+Üç şey bedava geldi:
 
-**Uyarı:** Core'da `UnityEngine.Random` da yasak. Rastgelelik `System.Random` ile **enjekte** edilecek → testte sabit tohumla shuffle'ın deterministik testi yazılabiliyor.
+1. **Core ↔ Game sınırı tek noktada.** `LevelConfig` bir `ScriptableObject`, Core'a giremiyor;
+   değerlerini `BoardConfig`'e kopyalıyor. İleride bir alan eklenirse geçirilecek tek yer orası.
+2. **`Validate()` Core'a taşındı.** `OnValidate` sadece inspector'ı koruyor; **testler config'i
+   doğrudan kuruyor ve inspector'a hiç uğramıyor.** Kuralın asıl yeri Core.
+3. **`Generate()` parametresiz.**
 
-### Alt konu — DI vs Singleton (kavram düzeltmesi)
+**`MoveLimit` ve `Seed` bilinçli olarak yok:** ikisi de tahtanın şeklini belirlemiyor. Hamle limiti oyun
+döngüsünün, tohum ise enjekte edilecek `Random`'ı kurmanın konusu.
 
-- **Singleton:** sınıf bağımlılığını kendisi **alır** (`Random.Instance.Next()`). Testte global'e müdahale gerekir; testler aynı örneği paylaşır → biri diğerinin durumunu bozar, sıraya duyarlı hale gelirler. **DI'ın zıddıdır.**
-- **DI:** bağımlılık **verilir** (`new Board(config, new Random(42))`). Test kendi örneğini kurar, kimseyle paylaşmaz.
-- `Board` içinde `new Random()` yazmak singleton değil ama yine de kötü: tohumu dışarıdan kontrol edemezsin.
+**Eşik sırası kuralı iki yerde, farklı davranışla:** `LevelConfig.OnValidate` sessizce düzeltiyor
+(authoring), `BoardConfig.Validate()` gürültülü şekilde reddediyor (kod). İkisi de doğru — kullanıcıya
+yardım et, programcıya hata ver.
 
-> **Kural: bir sınıf kendi rastgeleliğini, zamanını veya dosya erişimini kendisi yaratmasın.** Bunlar dışarıdan gelmeli, yoksa test edilemezler.
 
 ---
 
@@ -870,7 +1071,7 @@ foreach (int cell in group) {
 
 ---
 
-## Test planı — 8 test
+## Test planı — 9 test
 
 **Ölçüt:** *"Bunu sessizce kırarsam fark eder miyim?"* Kırıldığında ekranda hemen belli olan şeyleri test etmenin değeri düşük; sessiz bozulanlar değerli.
 
@@ -884,16 +1085,17 @@ foreach (int cell in group) {
 | 6 | **Shuffle en az bir grup üretiyor** — sabit tohumla değil, **~200 farklı tohumla** | Garanti adımının gerçekten *garanti* olduğunu ancak böyle kanıtlarsın |
 | 7 | **Shuffle renk sayılarını koruyor** | Takas yerine üzerine yazma hatasını **başka hiçbir şey yakalamaz** |
 | 8 | **Kazanma/kaybetme sırası** (son hamlede son Box → kazandın) | Yukarıdaki sıra hatasını kilitler |
+| 9 | **Satır sarması yok** (satır sonundaki hücre, bir üst satırın başındakiyle aynı gruba girmiyor) | Karar 15'te işaretlendi: 1D index'te `±1` satır sınırını aşar. Test 4 çaprazı kontrol ediyor, bu hata **yatay** — hiçbir mevcut test yakalamıyor. Tahtanın ortasında her şey doğru görünüyor. |
 
 **Bilinçli yazılmayanlar:** deadlock tespiti (6 zaten kapsıyor), boş tahta, geçersiz config, animasyon süresi, tıklama koordinat çevrimi → ya başka bir testin yan ürünü ya da kırıldığında ekranda anında belli oluyor.
 
-**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için 8 EditMode testi ile kritik davranışlar kilitlendi."*
+**README cümlesi:** *"Core tamamen Unity'den bağımsız olduğu için 9 EditMode testi ile kritik davranışlar kilitlendi."*
 
 ---
 
 ## Kapsam kararları özeti
 
-**Dahil:** blast mekaniği, ikon seviyeleri, Box Obstacle, gravity, deadlock + akıllı shuffle, hedef (tüm Box'ları kır), hamle limiti, skor, kazanma/kaybetme, ses, Box kırılma partikülü, object pooling, sprite atlas, 8 unit test, README + profiler ölçümleri.
+**Dahil:** blast mekaniği, ikon seviyeleri, Box Obstacle, gravity, deadlock + akıllı shuffle, hedef (tüm Box'ları kır), hamle limiti, skor, kazanma/kaybetme, ses, Box kırılma partikülü, object pooling, sprite atlas, 9 unit test, README + profiler ölçümleri.
 
 **Hariç:** çoklu seviye/progression, çoklu dokunuş, level editor, ulaşılabilirlik analizi, özel bloklar (roket/bomba), zincirleme kombolar, kayıt/yükleme, lokalizasyon.
 
