@@ -52,6 +52,80 @@ namespace BlastGame.Core
             cells = new Cell[rows * cols];
         }
 
+        /// <summary>
+        /// Fills the board: every cell gets a random colour, then <paramref name="boxCount"/> Boxes are
+        /// scattered over it. Safe to call again to restart a level - every cell is overwritten.
+        /// </summary>
+        /// <remarks>
+        /// <b>No Box on the top row.</b> Not in the case document; we added it. It guarantees that every
+        /// column can receive falling blocks, which makes the top row always full, which means there are
+        /// always at least two adjacent coloured cells, which is what shuffle needs to be able to work.
+        /// One placement rule buys the whole chain (DECISIONS.md, Karar 8).
+        /// </remarks>
+        /// <param name="boxCount">
+        /// A request, not a promise: silently clamped to what the board can hold under the rule above.
+        /// Nothing reads this number afterwards - the objective counts live Boxes on the board instead,
+        /// so a clamp cannot make a level unwinnable.
+        /// </param>
+        public void Generate(int colorCount, int boxCount)
+        {
+            // Colours are stored in a byte, so the range has to fit one.
+            if (colorCount < 1 || colorCount > 256)
+                throw new ArgumentOutOfRangeException(nameof(colorCount), colorCount, "Colour count must be in [1, 256].");
+            if (boxCount < 0)
+                throw new ArgumentOutOfRangeException(nameof(boxCount), boxCount, "Box count cannot be negative.");
+
+            // Uniform per cell, not a balanced deck. A deck would even out the starting colours, but
+            // refills after the first blast are uniform anyway, so the guarantee would hold for exactly
+            // one move and then quietly stop being true. K=1 is legal and needs no special case: the
+            // whole board becomes one group, which is correct.
+            for (int i = 0; i < cells.Length; i++)
+                cells[i] = Cell.MakeColor((byte)rng.Next(colorCount));
+
+            // Row 0 is the bottom and the array is row-major, so the top row is the LAST Cols entries
+            // and the Box-eligible cells are the contiguous prefix [0, boxCapacity). The row convention
+            // means the constraint costs no filtering at all.
+            int boxCapacity = (Rows - 1) * Cols;
+            int toPlace = Math.Min(boxCount, boxCapacity);
+            if (toPlace == 0) return;
+
+            var candidates = new int[boxCapacity];
+            for (int i = 0; i < boxCapacity; i++) candidates[i] = i;
+
+            // Partial Fisher-Yates. The full shuffle settles every position; we only need the first
+            // toPlace of them, so the loop stops early - exactly toPlace steps, no retries, no chance
+            // of picking the same cell twice.
+            //
+            // This runs front-to-back while the canonical form in Karar 9 runs back-to-front. Same
+            // algorithm from opposite ends: what makes either one unbiased is that the random index is
+            // drawn only from the region not yet fixed. Drawing from the whole range every time -
+            // rng.Next(0, n) - is the classic broken version, because n^n draws cannot divide evenly
+            // into n! permutations.
+            for (int i = 0; i < toPlace; i++)
+            {
+                int j = i + rng.Next(boxCapacity - i);   // untouched tail only
+
+                int pick = candidates[j];
+                candidates[j] = candidates[i];
+                candidates[i] = pick;
+
+                cells[pick] = Cell.MakeBox();
+            }
+        }
+
+        /// <summary>
+        /// Live Boxes on the board. Counted rather than tracked: a decrementing counter would be a third
+        /// piece of state to keep in sync, and getting it wrong fails silently - the level just never
+        /// ends, or ends early. Once per move over 100 cells is not worth a bug class.
+        /// </summary>
+        public int RemainingBoxes()
+        {
+            int count = 0;
+            for (int i = 0; i < cells.Length; i++)
+                if (cells[i].IsBox) count++;
+            return count;
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Index(int row, int col) => Grid.Index(row, col, Cols);
 
