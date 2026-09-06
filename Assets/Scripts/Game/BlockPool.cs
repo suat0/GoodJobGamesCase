@@ -74,6 +74,11 @@ namespace BlastGame.Game
                     $"Block pool exhausted at {Capacity} blocks; a rented block was never returned.");
 
             BlockView block = idle[--idleCount];
+
+            // A pooled object has to come back in a known state: the shuffle feedback leaves scales
+            // part-way, and a block returned mid-animation would otherwise reappear shrunken.
+            block.Scale = 1f;
+
             block.gameObject.SetActive(true);
             return block;
         }

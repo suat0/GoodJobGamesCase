@@ -46,6 +46,16 @@ namespace BlastGame.Game
             set => cachedTransform.position = value;
         }
 
+        /// <summary>
+        /// Uniform cosmetic scale, used by the shuffle feedback. Z is left at 1 - a sprite has no depth,
+        /// and a zero there would collapse the matrix rather than the picture.
+        /// </summary>
+        public float Scale
+        {
+            get => cachedTransform.localScale.x;
+            set => cachedTransform.localScale = new Vector3(value, value, 1f);
+        }
+
 #if UNITY_EDITOR
         // Fills the reference when the component is first added, so the prefab cannot be authored with
         // it left empty.

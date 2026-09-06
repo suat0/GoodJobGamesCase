@@ -70,6 +70,9 @@ namespace BlastGame.Game
         [Tooltip("Fall speed in cells per second. Every block moves at this rate, whatever the distance.")]
         [SerializeField] private float fallSpeed = 14f;
 
+        [Tooltip("Seconds for the whole shuffle: blocks shrink away, the board is redrawn, they grow back.")]
+        [SerializeField] private float shuffleDuration = 0.4f;
+
         private Board board;
         private BlockPool pool;
         private FallAnimator fallAnimator;
@@ -90,6 +93,14 @@ namespace BlastGame.Game
         /// <summary>Centre of cell (0, 0) in world space. Row 0 is the bottom row, as everywhere else.</summary>
         private Vector3 origin;
 
+        /// <summary>Seconds into the shuffle animation, or -1 when no shuffle is running.</summary>
+        private float shuffleElapsed = NotShuffling;
+
+        private bool shuffleRedrawn;
+
+        private const float NotShuffling = -1f;
+
+        private bool IsShuffling => shuffleElapsed >= 0f;
 
         // Karar 4: subscribe in OnEnable, unsubscribe in OnDisable, always through named methods. Start
         // and OnDestroy would leave an object that is disabled and re-enabled subscribed twice, and a
@@ -116,7 +127,7 @@ namespace BlastGame.Game
 
         private void HandleBoardChanged(BlastResult result) => ApplyBlast(result);
 
-        private void HandleDeadlockResolved() => Redraw();
+        private void HandleDeadlockResolved() => BeginShuffleAnimation();
 
         /// <summary>
         /// Attaches the view to a board: builds the pool, sizes the internal arrays and frames the camera.
@@ -268,6 +279,9 @@ namespace BlastGame.Game
             cellIndex = -1;
             if (board == null) return false;
 
+            // Nothing on screen means what it says while the board is dissolving and coming back.
+            if (IsShuffling) return false;
+
             Vector3 world = boardCamera.ScreenToWorldPoint(screenPosition);
 
             // origin is the centre of cell (0,0), so half a cell shifts it to that cell's lower-left
@@ -293,6 +307,71 @@ namespace BlastGame.Game
             if (fallAnimator == null) return;   // before Bind
 
             fallAnimator.Tick(Time.deltaTime);
+            TickShuffleAnimation(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Starts the shuffle feedback: every block shrinks away, the board is redrawn behind the gap,
+        /// and they grow back.
+        /// </summary>
+        /// <remarks>
+        /// <b>Why an animation at all.</b> A shuffle moves no blocks - it swaps the colour values of
+        /// cells - so without feedback the whole board would change identity between two frames and read
+        /// as a glitch. The animation exists to say "that was deliberate" (Karar 9a).
+        /// <para>
+        /// <b>Why shrink rather than fly.</b> Flying each colour to its new cell matches the player's
+        /// mental model better, and would cost a recorded permutation, a second position animation and
+        /// blocks passing through each other. The case is assessed on the deadlock <i>algorithm</i>, not
+        /// on its animation; this carries the same information for a tenth of the work.
+        /// </para>
+        /// <para>
+        /// The scale is written per block, never on this object's transform: a scaled parent would make
+        /// one world unit stop meaning one cell, and setting a child's world position under a parent
+        /// scaled to zero is a division by zero. Cosmetic scale stays on the things being decorated.
+        /// </para>
+        /// </remarks>
+        private void BeginShuffleAnimation()
+        {
+            shuffleElapsed = 0f;
+            shuffleRedrawn = false;
+        }
+
+        private void TickShuffleAnimation(float deltaTime)
+        {
+            if (!IsShuffling) return;
+
+            shuffleElapsed += deltaTime;
+            float t = shuffleElapsed / shuffleDuration;
+
+            if (t >= 1f)
+            {
+                if (!shuffleRedrawn) Redraw();   // a duration short enough to skip the midpoint frame
+
+                shuffleElapsed = NotShuffling;
+                SetAllBlockScales(1f);
+                return;
+            }
+
+            // The swap happens while nothing is on screen, which also hides the fall animator being
+            // cleared by Redraw - blocks still in the air snap to their cells behind a blank board.
+            if (t >= 0.5f && !shuffleRedrawn)
+            {
+                Redraw();
+                shuffleRedrawn = true;
+            }
+
+            // 1 at both ends, 0 in the middle: one expression for shrink-then-grow, no phase flag.
+            SetAllBlockScales(Mathf.Abs(1f - 2f * t));
+        }
+
+        private void SetAllBlockScales(float scale)
+        {
+            for (int i = 0; i < blockAt.Length; i++)
+            {
+                if (blockAt[i] == null) continue;
+
+                blockAt[i].Scale = scale;
+            }
         }
 
         private void ReleaseBlocksAt(ReadOnlySpan<int> cells)

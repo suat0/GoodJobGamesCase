@@ -303,6 +303,7 @@ MonoBehaviour:
   boardCamera: {fileID: 519420031}
   cameraPadding: 0.5
   fallSpeed: 14
+  shuffleDuration: 0.4
 --- !u!114 &1000000005
 MonoBehaviour:
   m_ObjectHideFlags: 0
