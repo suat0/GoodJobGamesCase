@@ -27,6 +27,13 @@ namespace BlastGame.Core
         /// </summary>
         private readonly Random rng;
 
+        /// <summary>
+        /// Rebuilt after every board change so group data is never observed stale. Created here rather
+        /// than injected: there will only ever be one implementation, and Board is the only thing that
+        /// knows when the cells changed.
+        /// </summary>
+        private readonly GroupFinder groupFinder;
+
         public int Rows { get; }
         public int Cols { get; }
         public int CellCount => cells.Length;
@@ -50,6 +57,8 @@ namespace BlastGame.Core
 
             // CellType.Empty is 0, so this is already a valid empty board - no initialisation pass.
             cells = new Cell[rows * cols];
+
+            groupFinder = new GroupFinder(rows, cols);
         }
 
         /// <summary>
@@ -111,7 +120,24 @@ namespace BlastGame.Core
 
                 cells[pick] = Cell.MakeBox();
             }
+
+            RecalculateGroups();
         }
+
+        /// <summary>
+        /// Refreshes group data for the current cells. Every mutation of the board ends with this, so
+        /// callers never have to remember to ask.
+        /// </summary>
+        public void RecalculateGroups() => groupFinder.Recalculate(cells);
+
+        /// <summary>Size of the group a cell belongs to; 0 for Empty and Box cells.</summary>
+        public int GroupSizeAt(int index) => groupFinder.GroupSizeAt(index);
+
+        /// <summary>Whether tapping this cell would blast a group.</summary>
+        public bool IsBlastable(int index) => groupFinder.IsBlastable(index);
+
+        /// <summary>Biggest group on the board. Zero when no coloured cells remain.</summary>
+        public int LargestGroupSize => groupFinder.LargestGroupSize;
 
         /// <summary>
         /// Live Boxes on the board. Counted rather than tracked: a decrementing counter would be a third
