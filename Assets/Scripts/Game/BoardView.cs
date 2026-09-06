@@ -214,6 +214,32 @@ namespace BlastGame.Game
         }
 
         /// <summary>
+        /// Converts a screen point to the cell that was tapped, or false when the tap should be ignored.
+        /// </summary>
+        /// <remarks>
+        /// Lives here because this class already owns both halves of the mapping: the layout that turns a
+        /// cell into a position, and the animator that knows which blocks have landed.
+        /// </remarks>
+        public bool TryPickCell(Vector3 screenPosition, out int cellIndex)
+        {
+            cellIndex = -1;
+            if (board == null) return false;
+
+            Vector3 world = boardCamera.ScreenToWorldPoint(screenPosition);
+
+            // origin is the centre of cell (0,0), so half a cell shifts it to that cell's lower-left
+            // corner and the floor lands on the right square. Flooring is what makes negative
+            // coordinates work: a cast to int truncates towards zero and would fold -0.4 onto cell 0.
+            int col = Mathf.FloorToInt((world.x - origin.x) / CellSize + 0.5f);
+            int row = Mathf.FloorToInt((world.y - origin.y) / CellSize + 0.5f);
+
+            if (row < 0 || row >= board.Rows || col < 0 || col >= board.Cols) return false;
+
+            cellIndex = row * board.Cols + col;
+            return true;
+        }
+
+        /// <summary>
         /// The single per-frame loop for the whole board. No block has an Update of its own.
         /// </summary>
         private void Update()
