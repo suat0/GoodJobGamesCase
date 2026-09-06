@@ -34,6 +34,27 @@ namespace BlastGame.Core
         /// </summary>
         private readonly GroupFinder groupFinder;
 
+        private readonly GravityResolver gravity;
+
+        /// <summary>
+        /// Reused across the whole session. See BlastResult's own note: listeners consume it during the
+        /// call and never keep it.
+        /// </summary>
+        private readonly BlastResult lastBlast;
+
+        /// <summary>
+        /// Stamp per cell, compared against <see cref="blastStamp"/>. The case document says a Box takes
+        /// one damage when an adjacent group is blasted - per group, not per neighbouring block - so a
+        /// five-block group touching the same Box three times must still deal exactly one.
+        /// </summary>
+        private readonly int[] boxStamp;
+
+        /// <summary>
+        /// Incremented once per blast. Every stamp written before this move is smaller, so old marks go
+        /// stale by themselves and there is nothing to clear between moves - no HashSet, no allocation.
+        /// </summary>
+        private int blastStamp;
+
         private readonly BoardConfig config;
 
         public int Rows { get; }
@@ -58,6 +79,9 @@ namespace BlastGame.Core
             cells = new Cell[Rows * Cols];
 
             groupFinder = new GroupFinder(config);
+            gravity = new GravityResolver(config, this.rng);
+            lastBlast = new BlastResult(config);
+            boxStamp = new int[cells.Length];
         }
 
         /// <summary>
@@ -118,6 +142,100 @@ namespace BlastGame.Core
             }
 
             RecalculateGroups();
+        }
+
+        /// <summary>
+        /// Replaces the board with an explicit arrangement of cells. The counterpart to
+        /// <see cref="Generate"/>: same contract, different source of the layout.
+        /// </summary>
+        /// <remarks>
+        /// Exists so a board can be stated rather than rolled - tests describe a situation exactly, and a
+        /// hand-authored level would enter the same way. Like Generate it ends by rebuilding group data,
+        /// so the board is never left with stale groups.
+        /// </remarks>
+        public void LoadState(ReadOnlySpan<Cell> state)
+        {
+            if (state.Length != cells.Length)
+                throw new ArgumentException(
+                    $"Expected {cells.Length} cells for a {Rows}x{Cols} board, got {state.Length}.",
+                    nameof(state));
+
+            state.CopyTo(cells);
+            RecalculateGroups();
+        }
+
+        /// <summary>
+        /// What the last successful <see cref="TryBlast"/> changed. Only meaningful right after one.
+        /// </summary>
+        public BlastResult LastBlast => lastBlast;
+
+        /// <summary>
+        /// Blasts the group at <paramref name="index"/> if there is one, and leaves the board in its
+        /// final state: blocks removed, Boxes damaged, gravity settled, new blocks in, groups rebuilt.
+        /// </summary>
+        /// <returns>False if the cell holds no blastable group; the board is untouched in that case.</returns>
+        /// <remarks>
+        /// <b>The board is never observable mid-move.</b> Everything resolves inside this call, so groups
+        /// and icon tiers are correct the instant it returns. The view then animates blocks from their old
+        /// positions to their new ones, which means the animation is cosmetic and can run as long as it
+        /// likes without the board being in a half-finished state (DECISIONS.md, Karar 5).
+        /// <para>
+        /// Order is deliberate: damage lands before gravity, so a Box that breaks this move has its cell
+        /// filled in the same move rather than leaving a hole waiting for the next one.
+        /// </para>
+        /// </remarks>
+        public bool TryBlast(int index)
+        {
+            if (!InBounds(index)) return false;
+            if (!groupFinder.IsBlastable(index)) return false;
+
+            int groupId = groupFinder.GroupIdAt(index);
+
+            lastBlast.Clear();
+            lastBlast.TappedIndex = index;
+            lastBlast.BlastedGroupSize = groupFinder.SizeOfGroup(groupId);
+
+            blastStamp++;
+
+            // Scanning all cells to collect one group is O(cells) where walking a stored member list
+            // would be O(group). At 100 cells the difference is noise, and keeping member lists would
+            // mean another structure to allocate and keep in step with the scan.
+            for (int i = 0; i < cells.Length; i++)
+            {
+                if (groupFinder.GroupIdAt(i) != groupId) continue;
+
+                cells[i] = Cell.Empty;
+                lastBlast.AddRemoved(i);
+                DamageAdjacentBoxes(i);
+            }
+
+            gravity.Apply(cells, lastBlast);
+            RecalculateGroups();
+
+            return true;
+        }
+
+        private void DamageAdjacentBoxes(int index)
+        {
+            for (int direction = 0; direction < Grid.DirectionCount; direction++)
+            {
+                if (!TryNeighbor(index, direction, out int neighbor)) continue;
+                if (!cells[neighbor].IsBox) continue;
+                if (boxStamp[neighbor] == blastStamp) continue;   // already hit by this same blast
+
+                boxStamp[neighbor] = blastStamp;
+                cells[neighbor].Health--;                          // in place: cells[i].X, never a copy
+
+                if (cells[neighbor].Health == 0)
+                {
+                    cells[neighbor] = Cell.Empty;
+                    lastBlast.AddBrokenBox(neighbor);
+                }
+                else
+                {
+                    lastBlast.AddDamagedBox(neighbor);
+                }
+            }
         }
 
         /// <summary>
