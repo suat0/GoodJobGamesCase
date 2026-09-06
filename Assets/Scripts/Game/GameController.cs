@@ -46,5 +46,26 @@ namespace BlastGame.Game
             boardView.Bind(board);
             boardView.Redraw();
         }
+
+        /// <summary>
+        /// Plays a tap. Does nothing when the cell holds no blastable group.
+        /// </summary>
+        /// <remarks>
+        /// The whole move resolves inside <see cref="Board.TryBlast"/> before the view is told, so the
+        /// board is never observable half-finished and the animation that follows is catching up, not
+        /// participating (Karar 5).
+        /// <para>
+        /// The move counter, scoring, the objective and the deadlock check belong in this method and are
+        /// deliberately not here yet: their order is a decision of its own (win before lose, deadlock
+        /// last) and it is the subject of the next phase. Until then a board that deadlocks stays
+        /// deadlocked - restart to get a new one.
+        /// </para>
+        /// </remarks>
+        public void TryBlastAt(int cellIndex)
+        {
+            if (!board.TryBlast(cellIndex)) return;
+
+            boardView.ApplyBlast(board.LastBlast);
+        }
     }
 }
