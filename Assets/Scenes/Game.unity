@@ -211,8 +211,99 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1000000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1000000002}
+  - component: {fileID: 1000000004}
+  - component: {fileID: 1000000003}
+  m_Layer: 0
+  m_Name: Game
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1000000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1000000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1000000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb2f41ab9803424b9ce567de73486fd7, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  level: {fileID: 11400000, guid: 12cc7596f9f74c01923ed8cc9deeb544, type: 2}
+  boardView: {fileID: 1000000004}
+--- !u!114 &1000000004
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1000000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5832f2c5d0794d72ba16dc54a1adfff0, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  blockPrefab: {fileID: 4100000000000000004, guid: 99f52ae781794b25b09df4aa05bcfdc6, type: 3}
+  colorSprites:
+  - defaultIcon: {fileID: 21300000, guid: f572b6e2be56041aca5f7fd3a6581220, type: 3}
+    iconA: {fileID: 21300000, guid: ea2ff2bf1a4774c58a0efd125411ec6a, type: 3}
+    iconB: {fileID: 21300000, guid: 035e0a0067ffc426b9828ca74a7b46a8, type: 3}
+    iconC: {fileID: 21300000, guid: e9959f1c0f0c64f1fad022e2831ecec5, type: 3}
+  - defaultIcon: {fileID: 21300000, guid: a9622c218ee64432c838c346a3be36e6, type: 3}
+    iconA: {fileID: 21300000, guid: 5dbe08523aa6b457b9e2e7d0b5d891b3, type: 3}
+    iconB: {fileID: 21300000, guid: 5eb9e4d8021524485b9091588f4891a1, type: 3}
+    iconC: {fileID: 21300000, guid: 935636045335b4da5824f7eaaa720ec7, type: 3}
+  - defaultIcon: {fileID: 21300000, guid: 2f6b384f96c8842168b2c492d44a7492, type: 3}
+    iconA: {fileID: 21300000, guid: 18768a7c7882c4f78b6f1d7277174e51, type: 3}
+    iconB: {fileID: 21300000, guid: 5068d4bdd004b47439239d83fa0a7e2d, type: 3}
+    iconC: {fileID: 21300000, guid: a8431b750fbd8461f8fffa4e44881327, type: 3}
+  - defaultIcon: {fileID: 21300000, guid: e423bc1491dc9479ca3e1fe345547573, type: 3}
+    iconA: {fileID: 21300000, guid: 55f7202fb80fb4092934f325b514b453, type: 3}
+    iconB: {fileID: 21300000, guid: 5472fe4c7a73c47babb79d12ff096e45, type: 3}
+    iconC: {fileID: 21300000, guid: 29767abec9fa74a729e1958b3c67ff07, type: 3}
+  - defaultIcon: {fileID: 21300000, guid: 83714c0a19ca94b368e9ce3b25a1d7dc, type: 3}
+    iconA: {fileID: 21300000, guid: bea080f0c1b464580bcce283d4327088, type: 3}
+    iconB: {fileID: 21300000, guid: 1ef0a044cdb534247b7da1d80adf5a31, type: 3}
+    iconC: {fileID: 21300000, guid: af0a33d8738a643d7817890ffa2661ef, type: 3}
+  - defaultIcon: {fileID: 21300000, guid: efe85a4abd6f44414a1611e6e4261257, type: 3}
+    iconA: {fileID: 21300000, guid: 8842bfda869504fe1bd8d6ebb22f20ac, type: 3}
+    iconB: {fileID: 21300000, guid: 3d314c030efdb43c292568653b63f825, type: 3}
+    iconC: {fileID: 21300000, guid: ce3c7313df9804e50b3510f61c574c4c, type: 3}
+  boxSprites:
+  - {fileID: 21300000, guid: ab3e2ee193a0444009bf474fdf664c49, type: 3}
+  - {fileID: 21300000, guid: c6f46594721504694aeb81a30c448ace, type: 3}
+  boardCamera: {fileID: 519420031}
+  cameraPadding: 0.5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
   - {fileID: 519420032}
+  - {fileID: 1000000002}
