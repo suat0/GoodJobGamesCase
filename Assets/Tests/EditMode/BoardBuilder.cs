@@ -80,6 +80,19 @@ namespace BlastGame.Tests
         public int Index(int row, int col) => row * Cols + col;
 
         /// <summary>
+        /// Wraps this layout in a real <see cref="Board"/>, for the behaviour that only exists at that
+        /// level - blasting, damage and gravity together.
+        /// </summary>
+        public Board ToBoard(int colorCount = 10, int seed = 1,
+                             int thresholdA = 4, int thresholdB = 7, int thresholdC = 9)
+        {
+            var config = new BoardConfig(Rows, Cols, colorCount, thresholdA, thresholdB, thresholdC, 0);
+            var board = new Board(config, new Random(seed));
+            board.LoadState(Cells);
+            return board;
+        }
+
+        /// <summary>
         /// Runs a scan over this board and hands back the finder to query. Thresholds default to
         /// Example 1 in the case document (A=4, B=7, C=9).
         /// </summary>
