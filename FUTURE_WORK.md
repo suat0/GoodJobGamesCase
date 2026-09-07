@@ -1,9 +1,10 @@
-# FUTURE_WORK — Bilinçli Kapsam Dışı Bırakılanlar
+# Bilinçli Kapsam Dışı Bırakılanlar
 
-Karar gerekçeleri: `DECISIONS.md` · Proje bağlamı: `CLAUDE.md` · Plan: `ROADMAP.md`
+Mimari için `ARCHITECTURE.md`, kararların gerekçeleri için `DECISIONS.md`.
 
-Bu dosya **"tamamen best practice'lerle, senior bir geliştirici gibi yazsaydım ne değişirdi?"** sorusunun cevabıdır.
-Amaç iki yönlü: (a) neyi bilerek yapmadığımızı kayıt altına almak, (b) mülakatta "daha büyük bir projede neyi farklı yapardın?" sorusuna hazır olmak.
+Bu dosya tek bir soruyu cevaplıyor: **bu oyun üretime çıksaydı ne eklenirdi, ve her biri ne zaman
+kendini ödemeye başlardı?** Her madde bir eşikle birlikte yazılı — çünkü asıl bilgi listenin kendisi
+değil, o eşik.
 
 ---
 
@@ -115,14 +116,14 @@ Bunlar bir **takımın** ihtiyacı, tek kişilik bir case'in değil.
 
 ### 💡 Ucuz ve değerli — eklenmeye değer
 
-Bu üçü **case'in performans vurgusuyla doğrudan örtüşüyor** ve toplam maliyeti yarım gün. `ROADMAP.md` Faz 8'e eklenebilir.
+Bu üçü performans tarafıyla doğrudan örtüşüyor ve toplam maliyeti yarım gün.
 
 #### 1. `ProfilerMarker` hot path'lerde
 ```csharp
 static readonly ProfilerMarker s_Blast = new("Board.Blast");
 static readonly ProfilerMarker s_Groups = new("Board.RecalculateGroups");
 ```
-**Değeri:** Profiler ekran görüntüsünde `Board.Blast` ve `RecalculateGroups` isimlerinin görünmesi, performans iddianı somutlaştırır. README'ye doğrudan kanıt.
+**Değeri:** Profiler'da `Board.Blast` ve `RecalculateGroups` isimlerinin görünmesi, performans iddiasını ölçüme bağlar.
 **Maliyet:** ~yarım saat.
 
 #### 2. Debug overlay (toggle'lanabilir)
@@ -170,15 +171,14 @@ Bütün eleme kararlarımız şu dört sepetten birine düşüyor:
 → SoA, bit packing, incremental hesap, GPU instancing buradan elendi.
 
 ### Kapsam
-Case belirli şeyleri değerlendiriyor. Değerlendirilmeyen bir alana yatırım yapmak, **değerlendirilen alandan zaman çalar.**
-→ Shuffle animasyonunda C'yi (küçül-değiş-büyü) seçmemizin sebebi buydu: case deadlock *algoritmasını* soruyor, animasyonunu değil.
+Bir problemin çevresindeki işe yatırım yapmak, problemin kendisinden zaman çalar.
+→ Shuffle animasyonunda küçül-değiş-büyü'yü seçmemizin sebebi buydu: zor olan deadlock *algoritması*,
+animasyonu değil.
 
-### Sinyal
-En incelikli olanı. **Junior başvurusunda aşırı mühendislik, yetersiz mühendislikten daha kötü okunur.**
-- Yetersiz mühendislik → "öğrenir"
-- Aşırı mühendislik → "yargısı yok"
-
-Gereksiz bir event bus, kullanılmayan bir interface katmanı, tek implementasyonlu bir factory — bunlar deneyim değil, **kalıp ezberi** sinyali verir.
+### Okunabilirlik
+Gereksiz bir event bus, kullanılmayan bir interface katmanı, tek implementasyonlu bir factory — bunlar
+sonraki okuyucuya deneyim değil, **kalıp ezberi** olarak görünür. Az sayıda ve gerekçesi olan yapı,
+çok sayıda ve "her ihtimale karşı" olan yapıdan her zaman daha kolay bakım alır.
 
 ### Bazıları gerçekten daha iyi değil
 Karar 4'teki A/B tartışması: **event'ler bağımlılığı kaldırmaz, derleyicinin göremediği bir yere taşır.**
@@ -186,23 +186,21 @@ Karar 4'teki A/B tartışması: **event'ler bağımlılığı kaldırmaz, derley
 
 ---
 
-## 6. Mülakat notu
+## 6. Hepsinin ortak kuralı
 
-Bu soru büyük ihtimalle sorulacak: *"Daha büyük bir projede neyi farklı yapardın?"*
+Yukarıdaki maddelerin hiçbiri "yapılmadı" diye yazılmadı; her biri **eşiğiyle** yazıldı. Aradaki fark
+şudur:
 
-**Zayıf cevap:** kalıp saymak.
-> "State machine, command pattern, dependency injection, CI/CD kullanırdım."
-
-**Güçlü cevap:** **eşiği söylemek.**
-> "State machine'i tek ekranda kurmadım; menü ve tutorial eklenseydi ilk yapacağım şey olurdu."
+> State machine yok — *ikinci bir ekran eklendiğinde ilk yapılacak şey o.*
 >
-> "Level pipeline'ı kurmadım çünkü case parametrik üretim istiyor; elle tasarlanmış seviyeler istenseydi editör ve solver bot gerekirdi."
+> Level pipeline yok — *çünkü üretim parametrik. Elle tasarlanmış seviyeler istenseydi editör ve
+> solver bot gerekirdi.*
 >
-> "Command pattern yok ama Core deterministik ve tohumlu, yani sunucu doğrulaması gerektiğinde altyapı hazır."
+> Command pattern yok — *ama Core deterministik ve tohumlu, yani sunucu doğrulaması gerektiğinde
+> altyapı hazır.*
 
-Fark şu: birincisi kalıp bildiğini gösterir, ikincisi **kalıbın ne zaman gerekmediğini** bildiğini gösterir.
-
-> **Bir şeyi ne zaman yapmayacağını bilmek, nasıl yapılacağını bilmekten daha zor öğrenilir.**
+Bir kalıbı bilmek onu her yere koymayı gerektirmez. **Bir şeyi ne zaman yapmayacağını bilmek, nasıl
+yapılacağını bilmekten daha zor öğrenilir.**
 
 ---
 

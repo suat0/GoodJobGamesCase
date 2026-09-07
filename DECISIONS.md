@@ -764,7 +764,7 @@ public bool IsBlastable(int cellIndex)
 
 ## Karar 15 — Komşu gezinme
 
-`CLAUDE.md`'deki sözde kod `foreach (int nb in Neighbors(cell))` diyor. Bu satırın nasıl yazıldığı, "oyun sırasında sıfır allocation" hedefinin tutup tutmayacağını tek başına belirliyor.
+Kabataslak yazımı `foreach (int nb in Neighbors(cell))` şeklindeydi. Bu satırın nasıl yazıldığı, "oyun sırasında sıfır allocation" hedefinin tutup tutmayacağını tek başına belirliyor.
 
 ### Seçenekler
 - **A — `IEnumerable<int>` + `yield return`**
