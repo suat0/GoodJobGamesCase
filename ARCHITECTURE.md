@@ -1,7 +1,8 @@
 # Architecture
 
 The technical companion to the README: the rules the code holds itself to, the data model, and the
-algorithms worth explaining. What a production version would add on top is in `FUTURE_WORK.md`.
+algorithms worth explaining. What a production version would add on top is in the `Scope and future
+work` section of `README.md`.
 
 ---
 
@@ -222,7 +223,8 @@ resolution, the objective and move limit, scoring, the end-of-level panel, pooli
 blast and landing effects, 63 unit tests.
 
 **Out:** progression across levels, a level editor, special blocks, chained combos, save/load,
-localisation. `FUTURE_WORK.md` records the threshold at which each would start paying for itself.
+localisation. The `Scope and future work` section of `README.md` records the threshold at which each
+would start paying for itself.
 
 A board with no Boxes has no objective and no move limit, which is the shape both of the case
 document's examples have. That is data rather than a second mode — the turn runs the same either way.
