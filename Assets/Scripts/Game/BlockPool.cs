@@ -49,9 +49,12 @@ namespace BlastGame.Game
 
             BlockView block = idle[--idleCount];
 
-            // The shuffle feedback leaves scales part-way, so a block returned mid-animation would
-            // otherwise reappear shrunken.
+            // Effects hand blocks back mid-flight: the shuffle leaves scales part-way, a pop leaves
+            // one shrunken and transparent, a shard leaves one turned. Reset every property an
+            // effect can write, or the next cell inherits the last effect's final frame.
             block.Scale = 1f;
+            block.Rotation = 0f;
+            block.Color = Color.white;
 
             block.gameObject.SetActive(true);
             return block;

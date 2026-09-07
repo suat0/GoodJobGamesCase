@@ -37,6 +37,37 @@ namespace BlastGame.Game
             set => cachedTransform.localScale = new Vector3(value, value, 1f);
         }
 
+        // Squash needs the axes to differ, which the uniform setter above cannot express. Kept as a
+        // method rather than a second property so no caller mistakes it for the common case.
+        public void SetScale(float x, float y) => cachedTransform.localScale = new Vector3(x, y, 1f);
+
+        // Degrees about z. A sprite lying in the xy plane has no other axis worth turning, and taking
+        // a float instead of a Quaternion keeps the effect data a plain number to integrate.
+        public float Rotation
+        {
+            get => cachedTransform.localEulerAngles.z;
+            set => cachedTransform.localRotation = Quaternion.Euler(0f, 0f, value);
+        }
+
+        // Tint and alpha in one, because SpriteRenderer stores them in one. Effects only ever fade,
+        // but exposing the whole colour costs nothing and keeps the reset in the pool a single write.
+        public Color Color
+        {
+            get => spriteRenderer.color;
+            set => spriteRenderer.color = value;
+        }
+
+        public float Alpha
+        {
+            get => spriteRenderer.color.a;
+            set
+            {
+                Color c = spriteRenderer.color;
+                c.a = value;
+                spriteRenderer.color = c;
+            }
+        }
+
 #if UNITY_EDITOR
         private void Reset() => spriteRenderer = GetComponent<SpriteRenderer>();
 #endif
