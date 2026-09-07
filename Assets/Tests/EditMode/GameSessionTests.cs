@@ -131,12 +131,17 @@ namespace BlastGame.Tests
         [Test]
         public void SessionOnABoardThatCannotBeMadePlayable_StartsFinished()
         {
-            // Four cells, four colours: no arrangement produces a pair, so the shuffle has nothing to
-            // work with. Generation never yields this - only a stated board can - but the session has
+            //  0 . 0     Every coloured cell is isolated by a hole. There is plenty of repeated colour,
+            //  . . .     but nowhere to put a pair - and no colour can make two cells neighbours, so
+            //  0 . 0     neither tier of the resolver can help. This is the only shape that defeats it.
+            //
+            // Generation never yields this: the top row holds no Boxes, so it is always a full run of
+            // colours. Only a stated board can, which is what makes it worth a test - the session has
             // to read the failure rather than drop it.
             var board = BoardBuilder.Parse(
-                "01",
-                "23").ToBoard(colorCount: 4);
+                "0.0",
+                "...",
+                "0.0").ToBoard(colorCount: 1);
 
             Assert.IsTrue(board.IsDeadlocked, "the fixture is meant to have no legal move");
 
