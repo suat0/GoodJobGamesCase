@@ -2,11 +2,9 @@ using UnityEngine;
 
 namespace BlastGame.Game
 {
-    // Turns a click into a cell with arithmetic - no colliders on the board. The reason is
-    // correctness, not speed: a raycast asks the VISUAL world what was hit, and during a fall the
-    // visual world is deliberately behind the logical one.
-    // Calls the controller directly - a tap has exactly one consumer, so an event would be pattern
-    // without reason.
+    // Turns a click into a cell with arithmetic. No colliders on the board, and the reason is
+    // correctness rather than speed: a raycast asks the visual world what was hit, and during a fall
+    // the visual world is deliberately behind the logical one.
     public sealed class InputHandler : MonoBehaviour
     {
         [SerializeField] private BoardView boardView;

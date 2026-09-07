@@ -4,15 +4,14 @@ using UnityEngine;
 namespace BlastGame.Game
 {
     // Short cosmetic animations - a blasted block popping, its shards flying, a landed block squashing.
-    // Built like FallAnimator on purpose: a preallocated struct array walked by one Tick, so the whole
-    // effect layer costs one allocation at startup and nothing per frame.
+    // Same shape as FallAnimator: a preallocated struct array walked by one Tick.
     //
-    // Why not ParticleSystem: a particle system draws with its own material, which splits the board's
-    // single batch. These effects are pooled SpriteRenderers holding sprites from the block atlas, so
-    // they batch with the board and add no draw call.
+    // Not a ParticleSystem, because that draws with its own material and would split the board's single
+    // batch. These are pooled SpriteRenderers holding sprites from the block atlas, so they batch with
+    // the board and add no draw call.
     //
-    // Nothing here can change the game. Core has already resolved the move; dropping an effect on the
-    // floor is a missing sparkle, never a wrong board.
+    // Nothing here can change the game. Core has already resolved the move, so dropping an effect is a
+    // missing sparkle, never a wrong board.
     public sealed class EffectRunner
     {
         private enum Kind : byte
@@ -27,11 +26,11 @@ namespace BlastGame.Game
             public BlockView Block;
             public Kind Kind;
 
-            // True when Block came from our own pool and must go back when the effect ends. A Squash
-            // borrows a board block instead, and returning that one would delete it from the board.
+            // True when Block came from our own pool and must go back. A Squash borrows a board block
+            // instead, and returning that one would delete it from the board.
             public bool Owned;
 
-            // Shards integrate their own position; the board never hears about where they went.
+            // Shards integrate their own position.
             public Vector3 Position;
             public Vector2 Velocity;
             public float AngularVelocity;
@@ -44,18 +43,15 @@ namespace BlastGame.Game
 
         private const float ShardGravity = -22f;
 
-        // Live effects packed into the first count slots, exactly like FallAnimator's moves.
         private readonly Effect[] effects;
 
         private int count;
 
-        // Sprites for the owned effects. Separate from the board's pool by design: BoardView releases
-        // a blasted block before renting the blocks that replace it, so holding one back for an
-        // animation would starve the board's pool of the slot it is about to need.
+        // Separate from the board's pool by necessity: BoardView releases a blasted block before
+        // renting the ones that replace it, so holding one back for an animation would starve the
+        // board's pool of the slot it is about to need.
         private readonly BlockPool pool;
 
-        // The view's own randomness. Core's generator is seeded and reproducible, and a sparkle must
-        // never be able to move it.
         private readonly System.Random rng = new System.Random();
 
         public EffectRunner(BlockPool pool, int capacity)
@@ -66,8 +62,6 @@ namespace BlastGame.Game
             this.pool = pool;
             effects = new Effect[capacity];
         }
-
-        public int ActiveCount => count;
 
         // A blasted block leaving the board: the same sprite in the same place, swelling and fading.
         public void Pop(Sprite sprite, Vector3 position, float duration)
@@ -87,22 +81,18 @@ namespace BlastGame.Game
             });
         }
 
-        // Fragments thrown from a blasted cell. Count is a request, not a promise - a full board
-        // blasting at once asks for hundreds, and the cap is what keeps this bounded.
+        // Fragments thrown from a blasted cell. The count is a request: a full board blasting at once
+        // asks for hundreds, and the cap is what keeps this bounded.
         public void Shards(Sprite sprite, Vector3 position, int requested, float scale, float speed, float duration)
         {
             if (sprite == null) return;
 
             for (int i = 0; i < requested; i++)
             {
-                // A shard starts inside the cell it came from, not at its centre, or the burst looks
-                // like a single point exploding rather than a block breaking up.
                 Vector3 start = position + new Vector3(RandomRange(-0.22f, 0.22f), RandomRange(-0.22f, 0.22f), 0f);
 
                 if (!TryTakeSprite(sprite, start, scale, out BlockView block)) return;   // cap reached
 
-                // Biased upwards: gravity pulls them back down, and a burst that only spreads sideways
-                // reads as a smear.
                 var velocity = new Vector2(RandomRange(-speed, speed), RandomRange(speed * 0.35f, speed * 1.15f));
 
                 Add(new Effect
@@ -119,8 +109,8 @@ namespace BlastGame.Game
             }
         }
 
-        // A block that just landed. The block stays the board's: we only write its scale, and we hand
-        // it back at exactly 1 so nothing downstream has to know this happened.
+        // A block that just landed. It stays the board's - only its scale is written, and it is handed
+        // back at exactly 1 so nothing downstream has to know this happened.
         public void Squash(BlockView block, float amount, float duration)
         {
             if (block == null) return;
@@ -141,7 +131,7 @@ namespace BlastGame.Game
         }
 
         // Called before a board block is pooled or redrawn. A Squash left running on a block that has
-        // been rented out to another cell would keep writing that cell's scale.
+        // since been rented to another cell would keep writing that cell's scale.
         public void Cancel(BlockView block)
         {
             if (block == null) return;
@@ -156,8 +146,8 @@ namespace BlastGame.Game
         }
 
         // Drops every effect that writes a board block, leaving the owned ones running. For the
-        // shuffle, which takes over every block's scale itself and would otherwise share it with a
-        // squash still recovering from the move that caused the shuffle.
+        // shuffle, which takes over every block's scale and must not share it with a squash still
+        // recovering from the move that caused the shuffle.
         public void CancelBorrowed()
         {
             for (int i = count - 1; i >= 0; i--)
@@ -169,8 +159,7 @@ namespace BlastGame.Game
             }
         }
 
-        // Every owned sprite goes back to our pool; every borrowed block is restored. Called from a
-        // redraw, which returns the board's blocks under us.
+        // Called from a redraw, which returns the board's blocks out from under us.
         public void Clear()
         {
             for (int i = 0; i < count; i++)
@@ -178,7 +167,7 @@ namespace BlastGame.Game
                 if (effects[i].Owned) pool.Return(effects[i].Block);
                 else effects[i].Block.Scale = 1f;
 
-                effects[i].Block = null;   // the array outlives the effect; don't pin the object
+                effects[i].Block = null;   // the array outlives the effect
             }
 
             count = 0;
@@ -186,11 +175,8 @@ namespace BlastGame.Game
 
         public void Tick(float deltaTime)
         {
-            // Backwards, because finishing an effect swaps the last entry into this slot - the same
-            // reason FallAnimator walks down.
             for (int i = count - 1; i >= 0; i--)
             {
-                // By reference: Effect is a struct, and advancing a copy advances nothing.
                 ref Effect effect = ref effects[i];
 
                 effect.Elapsed += deltaTime;
@@ -211,7 +197,7 @@ namespace BlastGame.Game
             }
         }
 
-        // Swells past its cell before collapsing: the overshoot is what makes a blast feel like a
+        // Swells past its cell before collapsing. The overshoot is what makes a blast feel like a
         // release rather than a deletion.
         private static void TickPop(ref Effect effect, float t)
         {
@@ -220,8 +206,7 @@ namespace BlastGame.Game
 
             if (t < PeakAt)
             {
-                // LerpUnclamped because OutBack leaves 0..1 on purpose - the block swells a little
-                // past Peak and settles, which is the whole point of the curve.
+                // LerpUnclamped, or OutBack's overshoot past Peak is clamped away.
                 effect.Block.Scale = Mathf.LerpUnclamped(1f, Peak, Easing.OutBack(t / PeakAt));
 
                 // Held opaque through the swell so the eye catches it.
@@ -247,8 +232,8 @@ namespace BlastGame.Game
             effect.Block.Position = effect.Position;
             effect.Block.Rotation = effect.Rotation;
 
-            // Fades only over the last third, and eases into it: a shard that starts disappearing on
-            // frame one never reads as a solid piece of the block it came from.
+            // Fades only over the last third. A shard that starts disappearing on frame one never
+            // reads as a solid piece of the block it came from.
             const float FadeFrom = 0.65f;
 
             effect.Block.Alpha = t < FadeFrom

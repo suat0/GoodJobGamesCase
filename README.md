@@ -22,15 +22,7 @@ after the board is built.**
 | Settled blocks stay tappable while others are still falling | `BoardView.TryPickCell` |
 | Deadlock is detected and resolved without a blind reshuffle, and the resolution cannot fail on a board this game can generate | `DeadlockResolver.cs` |
 
-Two inconsistencies in the case document, and how they were read:
 
-1. The constraints say 2–10 columns, but Example 1 uses `N = 12`. **The page-one constraints are
-   treated as authoritative.** The code still runs whatever the config gives it, with no hard-coded
-   ceiling, so both readings work.
-2. Example 1 writes `C = 9` and then says "more than 10". Example 2 is self-consistent, so the rule
-   is read as **`> C`**.
-
-Full reasoning for these and every other decision is in `Docs/DECISIONS.md`.
 
 ---
 

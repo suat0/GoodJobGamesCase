@@ -4,9 +4,8 @@ using UnityEngine;
 namespace BlastGame.Game
 {
     // Frames the board and knocks the view when something breaks. Split out of BoardView because it
-    // owns state nothing else may touch - the position the shake departs from - and because framing a
-    // board and drawing one are separate jobs that happened to share a class.
-    // Not a MonoBehaviour, like FallAnimator and EffectRunner: BoardView already has the one Update.
+    // owns the position the shake departs from, and because framing a board and drawing one are
+    // separate jobs that happened to share a class.
     public sealed class BoardCamera
     {
         private readonly Camera camera;
@@ -15,8 +14,8 @@ namespace BlastGame.Game
         private readonly float shakeMagnitude;
         private readonly float shakeDuration;
 
-        // Where Frame put the camera. Held apart from the camera's own position because the shake
-        // writes that every frame; reading it back would let each shake start from the last one's
+        // Where Frame put the camera. Held apart from the camera's own position, which the shake
+        // overwrites every frame - reading that back would let each shake start from the last one's
         // offset and walk the view off the board.
         private Vector3 basePosition;
 
@@ -42,31 +41,29 @@ namespace BlastGame.Game
         // aspect ratio to be comparable. A 10x2 board is limited by width, a 2x10 board by height.
         public void Frame(int rows, int cols, float cellSize, Vector3 center)
         {
-            // The padding joins each need before the comparison, not the result afterwards. Added at
-            // the end it would be half-height either way, which on a portrait screen shrinks to a
-            // fraction of itself horizontally - and a wide board would touch both edges.
+            // The padding joins each need before the comparison. Added to the result instead it would
+            // be half-height either way, which on a portrait screen shrinks to a fraction of itself
+            // horizontally, and a wide board would touch both edges.
             float verticalNeed = rows * 0.5f * cellSize + padding;
             float horizontalNeed = (cols * 0.5f * cellSize + padding) / camera.aspect;
 
             camera.orthographicSize = Mathf.Max(verticalNeed, horizontalNeed);
 
-            // Centred on the board rather than requiring the board to sit at the world origin.
             center.z = camera.transform.position.z;
 
             basePosition = center;
             camera.transform.position = center;
         }
 
-        // Restarted rather than stacked: a chain of breaks should read as one knock, not accumulate
-        // into a camera that never settles.
+        // Restarted rather than stacked, so a chain of breaks reads as one knock.
         public void Shake(float strength)
         {
             shakeElapsed = 0f;
             shakeStrength = strength;
         }
 
-        // Two sine waves at unrelated rates rather than a random offset per frame: random reads as
-        // video noise at 60fps, and this costs nothing and always ends where it started.
+        // Two sine waves at unrelated rates. A random offset per frame reads as video noise at 60fps;
+        // this costs nothing and always ends where it started.
         public void Tick(float deltaTime)
         {
             if (shakeElapsed < 0f) return;

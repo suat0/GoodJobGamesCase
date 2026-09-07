@@ -3,13 +3,13 @@ using UnityEngine;
 
 namespace BlastGame.Game
 {
-    // Moves blocks from where they were drawn to where the board says they now are. One loop for
-    // every block, not one Update per block - the per-block version gets slower with the board.
-    // Purely cosmetic: Core finished the move before this class heard about it.
+    // Moves blocks from where they were drawn to where the board says they now are. One loop for the
+    // whole board; the per-block Update version gets slower as the board grows.
     //
-    // Blocks accelerate under gravity rather than sliding at a constant rate. Duration still comes
-    // from distance - sqrt(2d/g), so a long fall still takes longer than a short one, which is what
-    // rules out a fixed-duration ease - but a falling block that never speeds up reads as a slide.
+    // Purely cosmetic - Core finished the move before this class heard about it.
+    //
+    // Blocks accelerate under gravity. Duration still comes from distance, sqrt(2d/g), which is what
+    // rules out a fixed-duration ease: a long fall has to take longer than a short one.
     public sealed class FallAnimator
     {
         private struct Move
@@ -22,20 +22,14 @@ namespace BlastGame.Game
             public int TargetCell;
         }
 
-        // Live moves packed into the first count slots. Struct array, not a list of objects: one
-        // allocation at startup, and the frame's work walks contiguous memory.
         private readonly Move[] moves;
 
         private int count;
 
-        // Which slot is heading for a cell, or -1 when nothing is. Makes "settled?" a single array
-        // read; a cell holds at most one move because no two blocks land on the same square.
         private readonly int[] entryOfCell;
 
         private readonly float gravity;   // cells per second squared
 
-        // Raised once per block, as it lands. Assigned once at construction, so the delegate costs one
-        // allocation at startup and none per landing. Null is allowed: the animation stands alone.
         private readonly Action<BlockView> onLanded;
 
         public FallAnimator(int cellCount, float gravity, Action<BlockView> onLanded = null)
@@ -52,8 +46,8 @@ namespace BlastGame.Game
             ClearCellEntries();
         }
 
-        // The one place the view's notion of time feeds a decision. Core has no idea which blocks are
-        // mid-air and must not - "settled" is a fact about an animation.
+        // The one place the view's notion of time feeds a decision. "Settled" is a fact about an
+        // animation, so Core neither knows nor should know it.
         public bool IsSettled(int cell) => entryOfCell[cell] < 0;
 
         public void Begin(BlockView block, Vector3 from, Vector3 to, int targetCell)
@@ -77,9 +71,8 @@ namespace BlastGame.Game
                 From = from,
                 To = to,
 
-                // d = gt^2/2 solved for t. The whole fall is one accelerating arc, so a block
-                // redirected mid-air starts over from rest - which is also what it looks like when
-                // the ground disappears from under something already falling.
+                // d = gt^2/2 solved for t. A block redirected mid-air starts over from rest, which is
+                // also what it looks like when the ground disappears from under it.
                 Duration = Mathf.Sqrt(2f * distance / gravity),
                 Elapsed = 0f,
                 TargetCell = targetCell
@@ -91,8 +84,8 @@ namespace BlastGame.Game
             block.Position = from;
         }
 
-        // For a block blasted mid-fall or redirected. Deliberately leaves it where it is: the caller
-        // either pools it or starts a new move from there, and snapping first would be a visible jump.
+        // Leaves the block where it is: the caller either pools it or starts a new move from there,
+        // and snapping to the target first would be a visible jump.
         public void Cancel(int cell)
         {
             int entry = entryOfCell[cell];
@@ -111,12 +104,9 @@ namespace BlastGame.Game
 
         public void Tick(float deltaTime)
         {
-            // Backwards, because finishing a move swaps the last entry into the current slot. Walking
-            // down means that entry has already been handled this frame.
             for (int i = count - 1; i >= 0; i--)
             {
-                // By reference: Move is a struct, and moves[i].Elapsed += dt on a copy would advance
-                // nothing at all.
+                // By reference - Move is a struct, and += on a copy would advance nothing.
                 ref Move move = ref moves[i];
 
                 move.Elapsed += deltaTime;
@@ -124,14 +114,12 @@ namespace BlastGame.Game
 
                 if (t < 1f)
                 {
-                    // t squared is the position half of d = gt^2/2, normalised: 0 at the start, 1 at
-                    // the end, and slow to leave.
                     move.Block.Position = Vector3.Lerp(move.From, move.To, t * t);
                     continue;
                 }
 
-                // The target itself, not Lerp(..., 1): a float that merely rounds to the cell centre
-                // would drift over a session.
+                // The target itself rather than Lerp(..., 1). A float that merely rounds to the cell
+                // centre would drift over a session.
                 move.Block.Position = move.To;
 
                 BlockView landed = move.Block;
@@ -139,8 +127,6 @@ namespace BlastGame.Game
                 entryOfCell[move.TargetCell] = -1;
                 RemoveAt(i);
 
-                // After the bookkeeping, not before: the listener may look the cell up, and it must
-                // find a block that has already settled.
                 onLanded?.Invoke(landed);
             }
         }
@@ -156,7 +142,7 @@ namespace BlastGame.Game
 
         private void ClearCellEntries()
         {
-            // -1, not 0: slot 0 is valid, so "nothing here" has to be a different value.
+            // -1 because slot 0 is valid, so "nothing here" needs a different value.
             for (int i = 0; i < entryOfCell.Length; i++) entryOfCell[i] = -1;
         }
     }

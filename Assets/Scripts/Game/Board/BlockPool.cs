@@ -3,13 +3,12 @@ using UnityEngine;
 
 namespace BlastGame.Game
 {
-    // A fixed set of block objects, created once and then only activated and deactivated. The point
-    // is the absence of Instantiate and Destroy during play: a blast churns a dozen blocks per move.
-    // Not a MonoBehaviour - no Update, no inspector state, and BoardView owns it.
+    // A fixed set of blocks, created once and then only activated and deactivated. The point is the
+    // absence of Instantiate and Destroy during play; a blast churns a dozen blocks per move.
     public sealed class BlockPool
     {
-        // Used as a stack rather than a queue: the most recently returned object is the one most likely
-        // still warm in cache, and neither order is observable.
+        // A stack, so the most recently returned object comes back first and is likelier to be warm in
+        // cache. Neither order is observable.
         private readonly BlockView[] idle;
 
         private int idleCount;
@@ -27,8 +26,6 @@ namespace BlastGame.Game
 
             for (int i = 0; i < capacity; i++)
             {
-                // Instantiated active so BlockView.Awake runs now rather than on the first rent, which
-                // would move the work back into play.
                 BlockView block = UnityEngine.Object.Instantiate(prefab, parent);
                 block.gameObject.name = "Block";     // otherwise every object reads "Block(Clone)"
                 block.gameObject.SetActive(false);
@@ -39,8 +36,8 @@ namespace BlastGame.Game
             idleCount = capacity;
         }
 
-        // Throws instead of growing: capacity is derived from the board, so running out means the view
-        // leaked a block. A pool that allocates its way out hides the bug it exists to prevent.
+        // Throws rather than growing. Capacity comes from the board, so running out means the view
+        // leaked a block, and a pool that allocates its way out hides the bug it exists to catch.
         public BlockView Rent()
         {
             if (idleCount == 0)
@@ -49,9 +46,8 @@ namespace BlastGame.Game
 
             BlockView block = idle[--idleCount];
 
-            // Effects hand blocks back mid-flight: the shuffle leaves scales part-way, a pop leaves
-            // one shrunken and transparent, a shard leaves one turned. Reset every property an
-            // effect can write, or the next cell inherits the last effect's final frame.
+            // Effects hand blocks back mid-flight - a pop leaves one shrunken and transparent, a shard
+            // leaves one turned. Reset everything an effect can write.
             block.Scale = 1f;
             block.Rotation = 0f;
             block.Color = Color.white;
@@ -64,8 +60,8 @@ namespace BlastGame.Game
         {
             if (block == null) throw new ArgumentNullException(nameof(block));
 
-            // Reachable only by returning the same block twice, which renders as a missing block
-            // somewhere else entirely.
+            // Reachable by returning the same block twice, which shows up as a missing block somewhere
+            // else entirely.
             if (idleCount == idle.Length)
                 throw new InvalidOperationException("Returned a block to a full pool; it was already idle.");
 

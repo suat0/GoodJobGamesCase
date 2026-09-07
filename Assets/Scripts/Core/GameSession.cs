@@ -9,8 +9,6 @@ namespace BlastGame.Core
         Lost = 2
     }
 
-    // What one tap did. A value rather than an event argument: the caller reads it on the same line it
-    // asked for it, so there is nothing to keep and nothing to go stale.
     public readonly struct TurnResult
     {
         public readonly bool Played;      // false when the tap hit no blastable group
@@ -27,17 +25,16 @@ namespace BlastGame.Core
         public static TurnResult Rejected(GameState state) => new TurnResult(false, false, state);
     }
 
-    // One playthrough of a level: the move counter, the score, the objective, and the order the checks
-    // run in after a blast. Board stays the owner of the cells; this owns everything that is true about
-    // the playthrough rather than about the board.
+    // One playthrough: the move counter, the score, the objective, and the order the checks run in
+    // after a blast. Board owns the cells; this owns what is true about the playthrough.
     public sealed class GameSession
     {
         private readonly Board board;
 
         private readonly int moveLimit;   // zero means unlimited
 
-        // Counted from the board, not read from the config: BoxCount is a request that generation
-        // clamps, so a level asking for 200 Boxes on a 10x10 board would have an unreachable objective.
+        // Counted from the board rather than read from the config. BoxCount is a request that
+        // generation clamps, so a level asking for 200 Boxes would have an unreachable objective.
         private int objectiveBoxes;
 
         public GameSession(Board board, int moveLimit)
@@ -60,8 +57,7 @@ namespace BlastGame.Core
 
         public int RemainingBoxes => board.RemainingBoxes();
 
-        // A board without Boxes has no objective, which both of the case document's examples look like.
-        // Not a second mode: the turn below runs the same either way, the objective is simply absent.
+        // A board without Boxes has no objective, which is what both case examples look like.
         public bool HasObjective => objectiveBoxes > 0;
 
         public bool HasMoveLimit => HasObjective && moveLimit > 0;
@@ -74,8 +70,8 @@ namespace BlastGame.Core
             Begin();
         }
 
-        // Adopts the board as it stands; producing a layout belongs to Board. That split is what lets
-        // a test state an exact board - win-before-lose cannot be arranged on a rolled one.
+        // Adopts the board as it stands. Producing a layout belongs to Board, which is what lets a test
+        // state an exact one - win-before-lose cannot be arranged on a rolled board.
         private void Begin()
         {
             objectiveBoxes = board.RemainingBoxes();
@@ -83,11 +79,9 @@ namespace BlastGame.Core
             Moves = 0;
             Score = 0;
 
-            // A generated board always has a legal move - Board.Generate guarantees it. A board stated
-            // through LoadState need not, and a shuffle cannot invent a pair out of colours that each
-            // occur once. The failure has to be read rather than dropped: reporting Playing there
-            // leaves the player tapping a board that can never answer, with no move, no shuffle and no
-            // end - which is worse than losing.
+            // A generated board always has a legal move, guaranteed by Board.Generate. A board stated
+            // through LoadState need not, and the failure has to be read rather than dropped -
+            // reporting Playing leaves the player tapping a board that can never answer.
             State = board.IsDeadlocked && !board.TryResolveDeadlock()
                 ? GameState.Lost
                 : GameState.Playing;
@@ -97,24 +91,22 @@ namespace BlastGame.Core
         {
             if (State != GameState.Playing) return TurnResult.Rejected(State);
 
-            // Blast, damage adjacent Boxes, gravity and refill, rebuild groups. The board is in its
-            // final state the moment this returns.
             if (!board.TryBlast(cellIndex)) return TurnResult.Rejected(State);
 
             Score += ScoreFor(board.LastBlast.BlastedGroupSize);
             Moves++;
 
-            // Win before loss: on the last move both "no Boxes left" and "no moves left" can be true,
+            // Win before loss. On the last move both "no Boxes left" and "no moves left" can be true,
             // and asking about the loss first would take the win away on the move that earned it.
             if (HasObjective && board.RemainingBoxes() == 0) return Finish(GameState.Won);
             if (HasMoveLimit && Moves >= moveLimit) return Finish(GameState.Lost);
 
-            // Deadlock last: shuffling a finished board is an animation with nothing behind it.
-            // A shuffle costs no move - the player neither caused it nor could avoid it.
+            // Deadlock last, because shuffling a finished board is an animation with nothing behind it.
+            // A shuffle costs no move: the player neither caused it nor could avoid it.
             if (!board.IsDeadlocked) return new TurnResult(true, false, State);
 
-            // Unsolvable is a precise condition, not a guess: no colour occurs twice, or no two
-            // coloured cells are adjacent.
+            // Only reachable on a hand-authored board with no two adjacent coloured cells. Generated
+            // boards always have a full top row, so the resolver always has somewhere to place a group.
             if (!board.TryResolveDeadlock()) return Finish(GameState.Lost);
 
             return new TurnResult(true, true, State);

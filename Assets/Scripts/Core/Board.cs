@@ -5,27 +5,25 @@ using System.Text;
 namespace BlastGame.Core
 {
     // Owns the board's cells. Row 0 is the BOTTOM row, so gravity falls toward decreasing index.
-    // The cell array is never reassigned or resized; algorithms receive it as a span per call rather
-    // than holding it, so this is the single owner of board data.
+    // The array is never reassigned or resized, and the algorithms below receive it as a span per call
+    // rather than holding it - so this stays the single owner of board data.
     public sealed class Board
     {
         private readonly Cell[] cells;
 
-        // Injected, never created here: generation and shuffle must be reproducible from a seed.
         private readonly Random rng;
 
         private readonly GroupFinder groupFinder;
         private readonly GravityResolver gravity;
 
-        // Built up front although it is only used on a deadlocked board: its scratch arrays are sized
-        // from the board, and allocating them on demand would spike the frame already doing the most work.
+        // Built up front even though it is only used on a deadlocked board - allocating its scratch
+        // arrays on demand would spike the frame already doing the most work.
         private readonly DeadlockResolver deadlockResolver;
 
         private readonly BlastResult lastBlast;
 
-        // A Box takes one damage per adjacent GROUP blasted, not per neighbouring block. The stamp is
-        // compared against blastStamp, which is incremented once per blast - so old marks go stale by
-        // themselves and there is nothing to clear between moves.
+        // A Box takes one damage per adjacent GROUP blasted, not per neighbouring block. blastStamp is
+        // bumped once per blast, so old marks go stale by themselves and nothing needs clearing.
         private readonly int[] boxStamp;
         private int blastStamp;
 
@@ -45,8 +43,7 @@ namespace BlastGame.Core
             Rows = config.Rows;
             Cols = config.Cols;
 
-            // CellType.Empty is 0, so this is already a valid empty board.
-            cells = new Cell[Rows * Cols];
+            cells = new Cell[Rows * Cols];   // CellType.Empty is 0, so this is already valid
 
             groupFinder = new GroupFinder(config);
             gravity = new GravityResolver(config, this.rng);
@@ -55,21 +52,20 @@ namespace BlastGame.Core
             boxStamp = new int[cells.Length];
         }
 
-        // No Box on the top row: every column can then receive falling blocks, so the top row is
-        // always full, so two adjacent coloured cells always exist, so shuffle can always work.
-        // BoxCount is a request, clamped to what the board can hold under that rule.
+        // One rule carries a lot here: no Box on the top row. Every column can then receive falling
+        // blocks, so the top row is always full, so two adjacent coloured cells always exist, so the
+        // shuffle always has somewhere to place a group.
         public void Generate()
         {
-            // Uniform per cell, not a balanced deck: refills are uniform anyway, so a balanced start
-            // would hold for exactly one move.
+            // Uniform per cell. Refills are uniform anyway, so a balanced deck would hold for exactly
+            // one move.
             for (int i = 0; i < cells.Length; i++)
                 cells[i] = Cell.MakeColor((byte)rng.Next(config.ColorCount));
 
             PlaceBoxes();
 
-            // Unconditional, and the last thing either helper leaves to this method: an early return
-            // inside PlaceBoxes once skipped it, and a board whose groups were never scanned reports
-            // every cell unblastable and the whole board deadlocked.
+            // Unconditional. An early return inside PlaceBoxes once skipped this, and a board whose
+            // groups were never scanned reports every cell unblastable and the whole board deadlocked.
             RecalculateGroups();
 
             GuaranteeALegalMove();
@@ -77,8 +73,6 @@ namespace BlastGame.Core
 
         private void PlaceBoxes()
         {
-            // Row 0 is the bottom and the array is row-major, so the Box-eligible cells are the
-            // contiguous prefix - the top-row rule costs no filtering.
             int boxCapacity = (Rows - 1) * Cols;
             int toPlace = Math.Min(config.BoxCount, boxCapacity);
             if (toPlace == 0) return;
@@ -86,8 +80,6 @@ namespace BlastGame.Core
             var candidates = new int[boxCapacity];
             for (int i = 0; i < boxCapacity; i++) candidates[i] = i;
 
-            // Partial Fisher-Yates: only the first toPlace positions need settling, and the random
-            // index is drawn only from the region not yet fixed.
             for (int i = 0; i < toPlace; i++)
             {
                 int j = i + rng.Next(boxCapacity - i);   // untouched tail only
@@ -100,20 +92,15 @@ namespace BlastGame.Core
             }
         }
 
-        // A generated board with no legal move is not a board. Small boards make this ordinary rather
-        // than exotic: a 2x2 holding one Box has three coloured cells, and with six colours all three
-        // come out different more often than not.
+        // Small boards make a move-less board ordinary rather than exotic: a 2x2 holding one Box has
+        // three coloured cells, and with six colours all three come out different more often than not.
         //
-        // The shuffle cannot help there - it swaps, so it needs a colour that already occurs twice.
-        // Generation has no such constraint. It assigns, so one write is enough and it cannot fail:
-        // the top row never holds a Box, so any two neighbours in it are two adjacent coloured cells.
+        // Generation can fix what the shuffle cannot. The shuffle swaps, so it needs a colour that
+        // already occurs twice; this assigns, so one write is enough and it cannot fail.
         //
-        // The column is drawn rather than fixed at zero, so the guaranteed pair does not always sit in
-        // the same corner - the same reason the shuffle samples its pair instead of taking the first.
-        //
-        // A single-column board is the exception and is left alone: it has no horizontal neighbour, and
-        // Boxes can leave one coloured cell with nothing to pair with. GameSession reports that as a
-        // level that is already over rather than starting one nobody can play.
+        // The column is drawn rather than fixed at zero, so the guaranteed pair does not always land in
+        // the same corner. A single-column board has no horizontal neighbour and is left alone -
+        // GameSession reports that as a level already over.
         private void GuaranteeALegalMove()
         {
             if (Cols < 2 || !IsDeadlocked) return;
@@ -126,8 +113,6 @@ namespace BlastGame.Core
             RecalculateGroups();
         }
 
-        // The counterpart to Generate: same contract, layout stated instead of rolled. Tests describe a
-        // situation exactly, and a hand-authored level would enter the same way.
         public void LoadState(ReadOnlySpan<Cell> state)
         {
             if (state.Length != cells.Length)
@@ -143,7 +128,7 @@ namespace BlastGame.Core
 
         // Leaves the board in its final state: removed, damaged, settled, refilled, groups rebuilt.
         // Never observable mid-move, which is what makes the view's animation purely cosmetic.
-        // Damage lands before gravity so a Box breaking this move has its cell filled in the same move.
+        // Damage lands before gravity, so a Box breaking this move has its cell filled in the same one.
         public bool TryBlast(int index)
         {
             if (!InBounds(index)) return false;
@@ -158,7 +143,7 @@ namespace BlastGame.Core
             blastStamp++;
 
             // O(cells) where a stored member list would be O(group) - another structure to keep in
-            // step with the scan, for no measurable gain at 100 cells.
+            // step with the scan, for nothing measurable at 100 cells.
             for (int i = 0; i < cells.Length; i++)
             {
                 if (groupFinder.GroupIdAt(i) != groupId) continue;
@@ -183,7 +168,7 @@ namespace BlastGame.Core
                 if (boxStamp[neighbor] == blastStamp) continue;   // already hit by this same blast
 
                 boxStamp[neighbor] = blastStamp;
-                cells[neighbor].Health--;                          // in place, never through a copy
+                cells[neighbor].Health--;                          // in place; see the Cell copy trap
 
                 if (cells[neighbor].Health == 0)
                 {
@@ -197,7 +182,6 @@ namespace BlastGame.Core
             }
         }
 
-        // Every mutation of the board ends with this, so callers never have to remember to ask.
         public void RecalculateGroups() => groupFinder.Recalculate(cells);
 
         public int GroupSizeAt(int index) => groupFinder.GroupSizeAt(index);
@@ -208,11 +192,11 @@ namespace BlastGame.Core
 
         public int LargestGroupSize => groupFinder.LargestGroupSize;
 
-        // Free: the group scan already knows the largest group, so this is a comparison, not a pass.
+        // Free - the group scan already knows the largest group, so this is one comparison.
         public bool IsDeadlocked => groupFinder.LargestGroupSize < GroupFinder.MinBlastableSize;
 
-        // Deliberately not called from TryBlast: a board that has just been won must not shuffle, and
-        // that ordering is a game rule. Core offers the remedy, the caller decides.
+        // Deliberately not called from TryBlast. A board that has just been won must not shuffle, and
+        // that ordering is a game rule, so Core offers the remedy and the caller decides.
         public bool TryResolveDeadlock()
         {
             if (!deadlockResolver.TryResolve(cells)) return false;
@@ -221,7 +205,8 @@ namespace BlastGame.Core
             return true;
         }
 
-        // Counted, not tracked: a counter is a third piece of state whose drift fails silently.
+        // Counted rather than tracked - a counter would be a third piece of state, and its drift would
+        // fail silently.
         public int RemainingBoxes()
         {
             int count = 0;
@@ -249,15 +234,12 @@ namespace BlastGame.Core
         public bool TryNeighbor(int index, int direction, out int neighbor)
             => Grid.TryStep(index, direction, Rows, Cols, out neighbor);
 
-        // By value. Three bytes, so the copy is free - and it is also the point: callers outside Core
-        // get a snapshot they cannot write back through.
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Cell CellAt(int index) => cells[index];
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public Cell CellAt(int row, int col) => cells[Index(row, col)];
 
-        // Top row first, row 0 last - the way a person looks at it. Test output and debug dumps only.
         public override string ToString()
         {
             var sb = new StringBuilder(Rows * (Cols * 3 + 1));
