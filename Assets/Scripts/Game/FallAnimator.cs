@@ -6,8 +6,10 @@ namespace BlastGame.Game
     // Moves blocks from where they were drawn to where the board says they now are. One loop for
     // every block, not one Update per block - the per-block version gets slower with the board.
     // Purely cosmetic: Core finished the move before this class heard about it.
-    // Constant speed, not a curve - duration comes from distance, so everything moves at the same
-    // rate. A fixed-duration ease would make long falls visibly faster than short ones.
+    //
+    // Blocks accelerate under gravity rather than sliding at a constant rate. Duration still comes
+    // from distance - sqrt(2d/g), so a long fall still takes longer than a short one, which is what
+    // rules out a fixed-duration ease - but a falling block that never speeds up reads as a slide.
     public sealed class FallAnimator
     {
         private struct Move
@@ -30,14 +32,19 @@ namespace BlastGame.Game
         // read; a cell holds at most one move because no two blocks land on the same square.
         private readonly int[] entryOfCell;
 
-        private readonly float speed;   // cells per second
+        private readonly float gravity;   // cells per second squared
 
-        public FallAnimator(int cellCount, float speed)
+        // Raised once per block, as it lands. Assigned once at construction, so the delegate costs one
+        // allocation at startup and none per landing. Null is allowed: the animation stands alone.
+        private readonly Action<BlockView> onLanded;
+
+        public FallAnimator(int cellCount, float gravity, Action<BlockView> onLanded = null)
         {
             if (cellCount < 1) throw new ArgumentOutOfRangeException(nameof(cellCount));
-            if (speed <= 0f) throw new ArgumentOutOfRangeException(nameof(speed), speed, "Speed must be positive.");
+            if (gravity <= 0f) throw new ArgumentOutOfRangeException(nameof(gravity), gravity, "Gravity must be positive.");
 
-            this.speed = speed;
+            this.gravity = gravity;
+            this.onLanded = onLanded;
 
             moves = new Move[cellCount];
 
@@ -69,7 +76,11 @@ namespace BlastGame.Game
                 Block = block,
                 From = from,
                 To = to,
-                Duration = distance / speed,
+
+                // d = gt^2/2 solved for t. The whole fall is one accelerating arc, so a block
+                // redirected mid-air starts over from rest - which is also what it looks like when
+                // the ground disappears from under something already falling.
+                Duration = Mathf.Sqrt(2f * distance / gravity),
                 Elapsed = 0f,
                 TargetCell = targetCell
             };
@@ -113,7 +124,9 @@ namespace BlastGame.Game
 
                 if (t < 1f)
                 {
-                    move.Block.Position = Vector3.Lerp(move.From, move.To, t);
+                    // t squared is the position half of d = gt^2/2, normalised: 0 at the start, 1 at
+                    // the end, and slow to leave.
+                    move.Block.Position = Vector3.Lerp(move.From, move.To, t * t);
                     continue;
                 }
 
@@ -121,8 +134,14 @@ namespace BlastGame.Game
                 // would drift over a session.
                 move.Block.Position = move.To;
 
+                BlockView landed = move.Block;
+
                 entryOfCell[move.TargetCell] = -1;
                 RemoveAt(i);
+
+                // After the bookkeeping, not before: the listener may look the cell up, and it must
+                // find a block that has already settled.
+                onLanded?.Invoke(landed);
             }
         }
 

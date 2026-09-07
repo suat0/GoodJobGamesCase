@@ -52,15 +52,53 @@ namespace BlastGame.Game
         [SerializeField] private float cameraPadding = 0.5f;
 
         [Header("Motion")]
-        [Tooltip("Fall speed in cells per second. Every block moves at this rate, whatever the distance.")]
-        [SerializeField] private float fallSpeed = 14f;
+        [Tooltip("Fall acceleration in cells per second squared. Distance still sets the duration, " +
+                 "so a long fall takes longer - it just does not travel at a constant rate.")]
+        [SerializeField] private float fallGravity = 55f;
 
         [Tooltip("Seconds for the whole shuffle: blocks shrink away, the board is redrawn, they grow back.")]
         [SerializeField] private float shuffleDuration = 0.4f;
 
+        [Header("Effects")]
+        [Tooltip("Sprites reserved for blast effects. The cap is deliberate: a full board blasting at " +
+                 "once would otherwise ask for hundreds. Effects past it are dropped, not queued.")]
+        [SerializeField] private int effectCapacity = 128;
+
+        [Tooltip("Seconds a blasted block takes to swell and vanish.")]
+        [SerializeField] private float popDuration = 0.16f;
+
+        [SerializeField] private int shardsPerBlock = 3;
+        [SerializeField] private int shardsPerBox = 6;
+        [SerializeField] private float shardScale = 0.3f;
+        [SerializeField] private float shardSpeed = 3.5f;
+        [SerializeField] private float shardDuration = 0.45f;
+
+        [Tooltip("How far a landing block flexes, as a fraction of a cell. Cosmetic only: a squashing " +
+                 "block is settled, so it stays tappable the frame it lands.")]
+        [SerializeField] private float landingSquash = 0.18f;
+
+        [SerializeField] private float landingSquashDuration = 0.12f;
+
+        [Header("Camera shake")]
+        [Tooltip("Cell fractions the camera swings at the start of a shake.")]
+        [SerializeField] private float shakeMagnitude = 0.09f;
+
+        [SerializeField] private float shakeDuration = 0.22f;
+
+        [Tooltip("Blocks removed in one move before the blast alone earns a shake. Shaking on every " +
+                 "move would make the whole game feel unsteady; a Box breaking always shakes.")]
+        [SerializeField] private int shakeBlastThreshold = 7;
+
+        [Tooltip("Depth offset for effect sprites. Same sorting layer and material as the board, so " +
+                 "the batch holds; z alone decides that a shard draws in front of the blocks.")]
+        [SerializeField] private float effectDepth = -0.1f;
+
         private Board board;
         private BlockPool pool;
         private FallAnimator fallAnimator;
+
+        private BlockPool effectPool;
+        private EffectRunner effectRunner;
 
         // Holds moving blocks between detach and attach. Needed because moves chain: one block leaves
         // a cell in the same move another arrives on it.
@@ -74,11 +112,24 @@ namespace BlastGame.Game
 
         private float shuffleElapsed = NotShuffling;
 
+        // Where FitCamera put the camera. Kept apart from the camera's own position because the shake
+        // adds to it every frame; reading the camera back would let each shake start from the last
+        // shake's offset and walk the view off the board.
+        private Vector3 cameraBase;
+
+        private float shakeElapsed = NotShaking;
+
+        private float shakeStrength;
+
+        private const float NotShaking = -1f;
+
         private bool shuffleRedrawn;
 
         private const float NotShuffling = -1f;
 
         private bool IsShuffling => shuffleElapsed >= 0f;
+
+        private bool IsShaking => shakeElapsed >= 0f;
 
         // OnEnable/OnDisable and named methods, never Start/OnDestroy and never a lambda: an object
         // that is disabled and re-enabled would end up subscribed twice, and a lambda cannot be
@@ -128,11 +179,19 @@ namespace BlastGame.Game
                 // No move can involve more blocks than the board has cells.
                 movingBlocks = new BlockView[board.CellCount];
 
-                fallAnimator = new FallAnimator(board.CellCount, fallSpeed);
+                fallAnimator = new FallAnimator(board.CellCount, fallGravity, HandleBlockLanded);
 
-                // Redraw returns every block before renting any, so the peak is exactly CellCount;
-                // the spare row is headroom for a block held briefly by an effect.
-                pool = new BlockPool(blockPrefab, transform, board.CellCount + board.Cols);
+                // Redraw returns every block before renting any, so the peak is exactly CellCount.
+                pool = new BlockPool(blockPrefab, transform, board.CellCount);
+
+                // A pool of its own, not headroom in the board's: ApplyBlast releases the blasted
+                // blocks before renting the ones that replace them, so an effect holding one back
+                // would starve the board of the slot it is about to need.
+                var effectsRoot = new GameObject("Effects").transform;
+                effectsRoot.SetParent(transform, false);
+
+                effectPool = new BlockPool(blockPrefab, effectsRoot, effectCapacity);
+                effectRunner = new EffectRunner(effectPool, effectCapacity);
             }
 
             FitCamera();
@@ -145,6 +204,10 @@ namespace BlastGame.Game
             if (board == null) throw new InvalidOperationException("Redraw before Bind.");
 
             fallAnimator.Clear();
+
+            // Before the blocks are pooled, not after: an effect borrowing a board block has to give
+            // it back at rest, or the next cell to rent it inherits a squashed scale.
+            effectRunner.Clear();
 
             for (int i = 0; i < blockAt.Length; i++)
             {
@@ -172,8 +235,10 @@ namespace BlastGame.Game
         {
             if (board == null) throw new InvalidOperationException("ApplyBlast before Bind.");
 
-            ReleaseBlocksAt(result.Removed);
-            ReleaseBlocksAt(result.BrokenBoxes);
+            ReleaseBlocksAt(result.Removed, shardsPerBlock);
+
+            // A Box takes two moves to break, so its one break is worth more than a colour block's.
+            ReleaseBlocksAt(result.BrokenBoxes, shardsPerBox);
 
             ReadOnlySpan<int> from = result.MoveFrom;
             ReadOnlySpan<int> to = result.MoveTo;
@@ -214,6 +279,11 @@ namespace BlastGame.Game
             }
 
             RefreshSprites();
+
+            // A Box breaking is the rarest thing a move can do and the only one worth two moves, so it
+            // always lands; an ordinary blast has to be big before it gets the same treatment.
+            if (result.BrokenBoxes.Length > 0) BeginShake(1f);
+            else if (result.Removed.Length >= shakeBlastThreshold) BeginShake(0.6f);
         }
 
         // Lives here because this class owns both halves of the mapping: the layout, and the animator
@@ -248,8 +318,12 @@ namespace BlastGame.Game
         {
             if (fallAnimator == null) return;   // before Bind
 
-            fallAnimator.Tick(Time.deltaTime);
-            TickShuffleAnimation(Time.deltaTime);
+            float deltaTime = Time.deltaTime;
+
+            fallAnimator.Tick(deltaTime);
+            effectRunner.Tick(deltaTime);
+            TickShuffleAnimation(deltaTime);
+            TickShake(deltaTime);
         }
 
         // A shuffle moves no blocks, it swaps colour values, so without feedback the whole board would
@@ -259,6 +333,10 @@ namespace BlastGame.Game
         // unit meaning one cell, and a child under a zero-scaled parent is a division by zero.
         private void BeginShuffleAnimation()
         {
+            // The shuffle writes every block's scale from here on, so nothing else may hold a claim
+            // on one. Landing squashes from the move that caused the shuffle are still running.
+            effectRunner.CancelBorrowed();
+
             shuffleElapsed = 0f;
             shuffleRedrawn = false;
         }
@@ -290,6 +368,45 @@ namespace BlastGame.Game
             SetAllBlockScales(Mathf.Abs(1f - 2f * t));
         }
 
+        // A landed block flexes, and that is all: the animator has already released the cell, so the
+        // block is settled and tappable while this runs. Impact feedback must never cost a tap.
+        private void HandleBlockLanded(BlockView block) =>
+            effectRunner.Squash(block, landingSquash, landingSquashDuration);
+
+        private void BeginShake(float strength)
+        {
+            // Restarted, not stacked: a chain of Box breaks should read as one knock, not accumulate
+            // into a camera that never settles.
+            shakeElapsed = 0f;
+            shakeStrength = strength;
+        }
+
+        // Two sine waves at unrelated rates rather than a random offset per frame: random reads as
+        // video noise at 60fps, and this costs nothing and always ends where it started.
+        private void TickShake(float deltaTime)
+        {
+            if (!IsShaking) return;
+
+            shakeElapsed += deltaTime;
+            float t = shakeElapsed / shakeDuration;
+
+            if (t >= 1f)
+            {
+                shakeElapsed = NotShaking;
+                boardCamera.transform.position = cameraBase;
+                return;
+            }
+
+            const float Frequency = 42f;
+
+            float amplitude = shakeMagnitude * shakeStrength * (1f - t);
+
+            boardCamera.transform.position = cameraBase + new Vector3(
+                Mathf.Sin(shakeElapsed * Frequency) * amplitude,
+                Mathf.Cos(shakeElapsed * Frequency * 1.37f) * amplitude * 0.6f,
+                0f);
+        }
+
         private void SetAllBlockScales(float scale)
         {
             for (int i = 0; i < blockAt.Length; i++)
@@ -300,15 +417,29 @@ namespace BlastGame.Game
             }
         }
 
-        private void ReleaseBlocksAt(ReadOnlySpan<int> cells)
+        // The block leaves the board here and the effect takes over its likeness: the effect copies
+        // the sprite and position and runs on a sprite of its own, so the board's block is free
+        // immediately and nothing downstream has to wait for an animation.
+        private void ReleaseBlocksAt(ReadOnlySpan<int> cells, int shardCount)
         {
             for (int i = 0; i < cells.Length; i++)
             {
                 int cell = cells[i];
-                if (blockAt[cell] == null) continue;
+
+                BlockView block = blockAt[cell];
+                if (block == null) continue;
+
+                Vector3 where = block.Position;
+                where.z += effectDepth;
+
+                effectRunner.Pop(block.Sprite, where, popDuration);
+                effectRunner.Shards(block.Sprite, where, shardCount, shardScale, shardSpeed, shardDuration);
+
+                // A block blasted within a squash of landing still has an effect writing its scale.
+                effectRunner.Cancel(block);
 
                 fallAnimator.Cancel(cell);
-                pool.Return(blockAt[cell]);
+                pool.Return(block);
                 blockAt[cell] = null;
             }
         }
@@ -359,6 +490,8 @@ namespace BlastGame.Game
             // Centre on the board rather than requiring the board to sit at the world origin.
             Vector3 cameraPosition = transform.position;
             cameraPosition.z = boardCamera.transform.position.z;
+
+            cameraBase = cameraPosition;
             boardCamera.transform.position = cameraPosition;
         }
 

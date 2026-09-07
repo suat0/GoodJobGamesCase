@@ -302,8 +302,20 @@ MonoBehaviour:
   - {fileID: 21300000, guid: c6f46594721504694aeb81a30c448ace, type: 3}
   boardCamera: {fileID: 519420031}
   cameraPadding: 0.5
-  fallSpeed: 14
+  fallGravity: 55
   shuffleDuration: 0.4
+  effectCapacity: 128
+  popDuration: 0.16
+  shardsPerBlock: 3
+  shardsPerBox: 6
+  shardScale: 0.3
+  shardSpeed: 3.5
+  shardDuration: 0.45
+  landingSquash: 0.18
+  landingSquashDuration: 0.12
+  shakeMagnitude: 0.09
+  shakeDuration: 0.22
+  shakeBlastThreshold: 7
 --- !u!114 &1000000005
 MonoBehaviour:
   m_ObjectHideFlags: 0
