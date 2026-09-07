@@ -14,19 +14,18 @@ değil, o eşik.
 
 Bu projede verdiğimiz kararların çoğu **zaten senior kararlarıydı** — ama ekleme yönünde değil, eleme yönünde:
 
-| Elenen | Nerede |
+| Elenen | Neden |
 |---|---|
-| Structure of Arrays (SoA) | Karar 2 |
-| Bit packing | Karar 2 |
-| Incremental grup hesabı | Karar 3 |
-| Global event bus | Karar 4 |
-| GPU instancing / tek mesh | Karar 10 |
-| Collider + raycast | Karar 11 |
-| Granüler assembly bölünmesi | Karar 12 |
-| `visitedStamp` optimizasyonu | Karar 3 |
-| Knuth selection sampling (Algoritma S) | Karar 18 |
-| Dengeli renk destesi | Karar 19 |
-| Box sayısı için sayaç field'ı | Karar 20 |
+| Structure of Arrays (SoA) | 100 hücrede ölçülemez; `Cell` zaten üç byte |
+| Bit packing | Aynı sebep, üstüne okunabilirlik kaybı |
+| Incremental grup hesabı | "Hangi bölge etkilendi" sanılandan geniş — bug riski, ölçülemez kazanç |
+| Global event bus | İki taraf var ve birbirlerini tanıyorlar |
+| GPU instancing / tek mesh | Tek atlas zaten tek draw call veriyor |
+| Collider + raycast | Görsel dünyayı sorgular; mantıksal hücreyi istiyoruz |
+| Granüler assembly bölünmesi | Engellenmek istenen bir bağımlılık yok, sadece sürtünme |
+| `visitedStamp` optimizasyonu | 100 elemanlık temizlik zaten bir `memset` |
+| Dengeli renk destesi | Refill düzgün rastgele; dengeli başlangıç bir hamle sürer |
+| Box sayısı için sayaç field'ı | Üçüncü bir durum, ve drifti sessizce başarısız olur |
 
 Hepsi **"yapabilirdim ama gerekmiyor"** kararlarıydı ve bu refleks deneyimle gelir.
 
@@ -60,7 +59,7 @@ Bunlar "best practice olduğu için" değil, **gerçek bir ihtiyaç doğduğu i�
 
 ### Level content pipeline
 **Ne:** Seviye editörü, JSON/ScriptableObject seviye dosyaları, seviye başına spawner tanımları.
-**Bağlam:** Karar 6'da elle tasarımı (B) elerken bu bedeli **açıkça kabul ettik.**
+**Bağlam:** elle seviye tasarımını elerken bu bedel açıkça kabul edildi.
 **Neden yok:** Case parametrik üretim istiyor (M, N, K, A, B, C değişken; 2–10 arası her boyut çalışmalı). Elle tasarım bununla çelişir.
 **Eşik:** Progression/seviye sistemi eklendiği an.
 
@@ -69,7 +68,7 @@ Bunlar "best practice olduğu için" değil, **gerçek bir ihtiyaç doğduğu i�
 Sektörde standart: spawner en az bir yasal hamlenin kalacağını garanti eder, ve aynı mekanizma zorluk
 ayarının da temel aracıdır (oyuncuya ne sıklıkta büyük grup düşeceği buradan ayarlanır).
 **Bizde durum:** `GravityResolver` hücre başına düzgün rastgele çekiyor. Deadlock'u *oluşmadan* önlemek
-yerine oluştuktan sonra çözüyoruz (Karar 37) — bu case için doğru takas, çünkü case açıkça deadlock
+yerine oluştuktan sonra çözüyoruz — bu case için doğru takas, çünkü case açıkça deadlock
 **tespiti ve çözümü** istiyor; önleyici bir spawner o gereksinimi görünmez kılardı.
 **Eşik:** Zorluk eğrisi ürün gereksinimi olduğu an. Ölçtüğümüz bir veri bunu şimdiden gösteriyor:
 varsayılan 10×10'da 2000 oyunda shuffle **hiç** tetiklenmiyor, yani deadlock zaten pratikte oluşmuyor —
@@ -77,10 +76,10 @@ ağırlıklı spawner'ın orada çözeceği bir sorun yok, ayarlayacağı bir zo
 
 ### Otomatik seviye doğrulama (solver bot)
 **Ne:** Bot'ların seviyeleri binlerce kez oynayıp çözülebilirliği doğrulaması.
-**Bağlam:** Karar 8'de araştırdığımız sektör pratiği (bkz. arXiv 2409.06349).
+**Bağlam:** `DECISIONS.md`'de araştırılan sektör pratiği (bkz. arXiv 2409.06349).
 **Bizde durum:** Üretim tarafında bunu **tek bir kısıta indirgedik** — "en üst satıra Box konmaz" —
-ve doğrulama tarafında rastgele oynayan bir bot'u geçici olarak kullandık: Karar 36 ve 37'deki iki
-hatanın ikisi de ölçümle bulundu, muhakemeyle değil. O bot repoda değil çünkü ölçtüğü özellikler artık
+ve doğrulama tarafında rastgele oynayan bir bot'u geçici olarak kullandık: oynanabilirlikle ilgili
+iki hatanın ikisi de ölçümle bulundu, muhakemeyle değil. O bot repoda değil çünkü ölçtüğü özellikler artık
 birer test.
 **Eşik:** Elle tasarlanmış seviyeler + çeşitli engel tipleri geldiği an — o zaman bot geçici değil,
 CI'da koşan kalıcı bir araç olur.
@@ -136,7 +135,7 @@ Ekranda gösterilecekler: grup id'leri, grup boyutları, deadlock durumu, oturmu
 [Conditional("UNITY_ASSERTIONS")]
 static void AssertInBounds(int r, int c) { ... }
 ```
-Faz 1'de `GroupFinder.AssertMatchesBoard` ile başladı: Karar 13/A2'nin bıraktığı tek açığı
+`GroupFinder.AssertMatchesBoard` ile başladı: caller-owned workspace deseninin bıraktığı tek açığı
 (`GroupFinder` boyutları constructor'dan biliyor ama veriyi ayrı alıyor → ikisi ayrışabilir) kapatıyor.
 Yani artık "eklenebilir bir cila" değil, bir mimari kararın tamamlayıcısı.
 
@@ -181,7 +180,7 @@ sonraki okuyucuya deneyim değil, **kalıp ezberi** olarak görünür. Az sayıd
 çok sayıda ve "her ihtimale karşı" olan yapıdan her zaman daha kolay bakım alır.
 
 ### Bazıları gerçekten daha iyi değil
-Karar 4'teki A/B tartışması: **event'ler bağımlılığı kaldırmaz, derleyicinin göremediği bir yere taşır.**
+Core ↔ View tartışmasında olduğu gibi: **event'ler bağımlılığı kaldırmaz, derleyicinin göremediği bir yere taşır.**
 "Best practice" etiketi bir şeyi her bağlamda doğru yapmaz.
 
 ---
@@ -219,6 +218,6 @@ yapılacağını bilmekten daha zor öğrenilir.**
 | `#nullable enable` | Yok | Kazanç düşük (Core'da referans tipi yok) |
 | **`ProfilerMarker`** | **Eklenebilir** | **Ucuz + case vurgusuyla örtüşüyor** |
 | **Debug overlay** | **Eklenebilir** | **Deadlock/shuffle'ı görsel kanıtlar** |
-| **`[Conditional]` assert** | **Başlandı (Faz 1)** | **Release'de sıfır maliyet; Karar 13/A2'nin açığını kapatıyor** |
+| **`[Conditional]` assert** | **Başlandı (Faz 1)** | **Release'de sıfır maliyet; caller-owned workspace'in açığını kapatıyor** |
 | Booster / özel blok / juice | Yok | **Eklemek aktif zarar** — istenmeyen iş |
 | Renk körlüğü notu | README'ye | Bedava artı, kod gerekmiyor |

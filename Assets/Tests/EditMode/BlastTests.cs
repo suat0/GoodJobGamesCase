@@ -115,7 +115,7 @@ namespace BlastGame.Tests
             Assert.AreEqual(1, board.LastBlast.BrokenBoxes.Length, "second blast breaks it");
             Assert.IsFalse(board.CellAt(boxIndex).IsBox, "the Box is gone");
             Assert.IsFalse(board.CellAt(boxIndex).IsEmpty,
-                "and gravity filled its cell within the same move, per Karar 24");
+                "and gravity filled its cell within the same move");
         }
 
         [Test]

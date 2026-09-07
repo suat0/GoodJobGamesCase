@@ -60,7 +60,7 @@ namespace BlastGame.Tests
             Assert.AreEqual(GameState.Lost, turn.State);
         }
 
-        // --- The objective is data, not a second mode (Karar 7a) --------------------------------
+        // --- The objective is data, not a second mode --------------------------------------------
 
         [Test]
         public void BoardWithoutBoxes_HasNoObjectiveAndNoMoveLimit()

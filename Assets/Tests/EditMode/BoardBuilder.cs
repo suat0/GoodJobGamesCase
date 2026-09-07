@@ -11,9 +11,9 @@ namespace BlastGame.Tests
     /// row 0 is the bottom row everywhere in Core. Keeping the flip here means no test ever has to
     /// think about it, which is the point: a test that is hard to read cannot be trusted when it fails.
     /// <para>
-    /// Produces a raw <c>Cell[]</c> rather than a <see cref="Board"/>. That is not a workaround - it is
-    /// Karar 13/A2 paying off. <see cref="GroupFinder"/> takes its data per call, so it can be exercised
-    /// on a hand-written board without constructing anything else.
+    /// Produces a raw <c>Cell[]</c> rather than a <see cref="Board"/>. That is not a workaround - it
+    /// is the caller-owned workspace paying off. <see cref="GroupFinder"/> takes its data per call, so
+    /// it can be exercised on a hand-written board without constructing anything else.
     /// </para>
     /// </remarks>
     public static class BoardBuilder
