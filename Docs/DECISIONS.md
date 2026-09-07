@@ -1268,6 +1268,133 @@ ekranda yanlış bir görüntü olarak belirir, ki bakarak fark edilmez.
 
 ---
 
+## Karar 30 — Efekt katmanı: `ParticleSystem` mi, havuzlanmış `SpriteRenderer` mı?
+
+Patlama pop'u, kırılma parçaları ve iniş squash'ı için.
+
+### Seçenekler
+- **A.** Unity `ParticleSystem` (blok başına bir burst, ya da havuzlanmış birkaç sistem)
+- **B.** Kendi atlas'ımızdan kiralanan `SpriteRenderer`'lar, tek bir `Tick` ile sürülen struct dizisi
+
+### A'nın eleme gerekçesi
+Bir particle system **kendi material'i ile çizer.** Tahta, efektler, arka plan ve çerçeve şu an tek bir
+material paylaşıyor (hepsi `BlockAtlas`'ta) — araya farklı bir material giren an batch ikiye bölünür.
+Case'in açık odağı GPU dahil performans; cilayı tam da ölçülen şeyi bozarak eklemek ters bir takas olurdu.
+
+İkinci gerekçe: `ParticleSystem` blok sprite'ını kullanamaz. Patlayan bloğun **kendi görüntüsünün**
+şişip dağılması, jenerik bir toz bulutundan hem daha okunur hem bedava — sprite zaten elimizde.
+
+### Seçilen: B
+`EffectRunner` bilinçli olarak `FallAnimator` ile aynı şekle sahip: önceden ayrılmış `Effect[]`, `count`,
+geriye doğru dönen tek `Tick`, silinen slota son elemanı çekme. Bir okuyucu ikisinden birini anladığında
+diğerini de anlamış olur.
+
+**Havuz ayrımı — bu kısım tercih değil, zorunluluk.** Efekt sprite'ları **kendi** havuzundan kiralanır,
+tahtanınkinden değil. `ApplyBlast` patlayanları serbest bırakmayı, yerlerine gelecekleri kiralamadan
+**önce** yapıyor; ölen bloğu animasyon süresince tutmak ana havuzu tam da ihtiyaç duyduğu anda aç
+bırakırdı. Ölen blok anında iade edilir, efekt onun `Sprite` ve `Position` değerlerini kopyalar.
+
+**Tavan aşıldığında efekt sessizce düşer.** `BlockPool.Rent`'in fırlatma davranışının (Karar 29) aksine:
+orada tükenme bir bug'dır, burada 100 bloklu bir tahtanın tek hamlede patlaması. Efekt kozmetik —
+düşürülen bir kıvılcım eksik bir parıltıdır, yanlış bir tahta değil.
+
+---
+
+## Karar 31 — Düşüş: sabit hız mı, yerçekimi mi?
+
+Başlangıçta sabit hızdı (`mesafe / hız`), yerçekimine çevrildi (`sqrt(2·mesafe / g)`, konum `t²` ile).
+
+**Sabit hızın orijinal gerekçesi ayakta kalıyor:** süre mesafeden türemeli, yoksa uzun düşüşler kısa
+olanlardan gözle görülür şekilde hızlı olur. Yerçekimi de bu kısıtı sağlıyor — değişen sadece
+mesafe→süre eğrisi. Yani bu bir kararın iptali değil, aynı kararın daha iyi bir uygulaması.
+
+**Neden değişti:** hızlanmayan bir düşen blok düşmüyor, **kayıyor.** Ağırlık hissi tamamen ivmeden geliyor.
+
+`t²` bilinçli olarak `Easing.InQuad`'a bağlanmadı (Karar 35): o bir easing değil, `d = gt²/2`'nin konum
+yarısı. Formüllerin aynı olması tesadüf; oraya easing adı koymak fiziksel gerekçeyi silerdi.
+
+---
+
+## Karar 32 — HUD: legacy `Text` mi, TextMeshPro mu?
+
+`UnityEngine.UI.Text` + built-in Arial ile başlandı, TMP + Baloo 2 ExtraBold'a (OFL) geçildi.
+
+**Gerekçe:** legacy `Text` bitmap font atlas'ı kullanır ve ölçeklendiğinde bulanıklaşır; TMP'nin SDF'i
+her boyutta keskin ve outline/gölge bedava gelir. Case "3rd party serbest" diyor, TMP zaten
+`com.unity.ugui` içinde kurulu — kullanmamak için sebep yoktu.
+
+**Font asset statik, dynamic değil.** Dynamic bir font asset eksik glyph'i oyun sırasında render eder,
+yani allocate eder — projenin kendini ölçtüğü tek şey. 95 karakterlik yazdırılabilir ASCII önceden
+pişirilir. Font asset'i elle değil `PolishSetup.CreateFontAsset` ile üretiliyor: elle yeniden kurulan
+bir atlas farklı padding veya sampling ile gözle görülür şekilde başka render eder.
+
+**Etiketler string üretmiyor.** `label.text = $"Score {x}"` yerine `label.SetText("{0:0}", x)` — TMP
+kendi tamponuna formatlar. Skor artık sayarak yükseldiği için etiket her karede değişiyor;
+interpolasyon olsaydı saniyede birkaç yüz bayt heap'e giderdi.
+
+---
+
+## Karar 33 — Klasör düzeni: ince taksonomi mi, asmdef sınırları mı?
+
+Referans olarak bakılan bir başka case projesi (`DreamCase`) `Animation/`, `Board/`, `Core/`, `Data/`,
+`Effects/`, `Mechanics/`, `UI/`, `Utils/` diye dokuz klasöre ayrılmış. İlk bakışta daha derli toplu.
+
+### Eleme gerekçesi
+O dokuz klasörün tamamı **tek bir asmdef altında.** Yani hiçbir sınır derleyici tarafından zorlanmıyor,
+klasörler yalnızca bir isimlendirme geleneği. Sonucu somut: oradaki `MatchFinder` `Cube` MonoBehaviour'ları
+üzerinde çalışıyor, dolayısıyla grup bulmayı sınayan bir test bile sahnede gerçek bir `GameObject` kurmak
+zorunda.
+
+Bu projede klasörler zaten asmdef sınırlarıyla örtüşüyor: `Core` (`noEngineReferences: true`), `Game`,
+`Tests`. Yani `Core/` bir konvansiyon değil, `using UnityEngine` yazınca derlemeyen bir duvar.
+
+### Seçilen
+`Game/` altında **üç** alt klasör — `Board/`, `Effects/`, `UI/` — akış ve Unity kabuğu (`GameController`,
+`InputHandler`, `LevelConfig`) kökte. Yeni asmdef yok: alt klasörler zaten `BlastGame.Game`'in içinde.
+
+On yedi dosyayı dokuz klasöre bölmek klasör başına iki dosya demek olurdu; bu, asıl güçlü sinyali —
+derleyici tarafından zorlanan `Core` sınırını — görsel gürültüyle seyreltir. **Klasör sayısı mimari
+ölçmez.**
+
+---
+
+## Karar 34 — `BoardCamera` neden ayrıldı, shuffle neden ayrılmadı
+
+Cila eklendikçe `BoardView` 399 → 554 satıra çıktı ve sekiz iş yapmaya başladı.
+
+**Ayrılan: kamera.** `FitCamera`, sarsıntı ve sarsıntının döndüğü taban konum `BoardCamera`'ya taşındı.
+Üç şartı da geçiyor (Karar 17): kendi durumunun tek sahibi (taban konumu başka kimse yazamaz),
+gerçek bir kavram, ve adı `Manager`/`Helper` değil. Bir tahtayı **çerçevelemek** ile **çizmek** yalnızca
+tarihsel olarak aynı sınıfta bulunuyordu.
+
+**Ayrılmayan: shuffle animasyonu.** `blockAt` dizisine ve `Redraw()`'a doğrudan bağlı. Ayırmak diziyi ve
+bir redraw callback'ini geçirmeyi gerektirirdi — yani **kaldırdığından fazla bağ kurardı.** Satır sayısı
+düşürmek uğruna yapılan bir ayrım, ayırdığı iki parçayı birbirine daha sıkı bağlıyorsa kayıptır.
+
+`BoardCamera` da `MonoBehaviour` değil, `FallAnimator` ve `EffectRunner` gibi: `BoardView`'un zaten tek
+bir `Update`'i var ve sıralama orada belli.
+
+---
+
+## Karar 35 — `Easing` nerede yaşıyor
+
+Eğriler `HudView` içinde private bir `EaseOutBack` ve `EffectRunner`/`BoardView` içine gömülü doğrusal
+`Lerp`'ler olarak dağılmıştı. Tek bir statik `Easing` sınıfında toplandı.
+
+**`Core`'da değil, `Game/Effects/`'te.** `Core` tahta kurallarının yeri; easing sunum katmanına ait.
+Motor bağımsız olması onu `Core`'a ait yapmaz — `Core`'un kapsamı "motorsuz" değil, "oyunun kuralları".
+
+**Sadece çağıranı olan eğriler var** — `InQuad`, `SmoothStep`, `OutBack`. Easing tabloları bir düzine
+kullanılmayan fonksiyonun biriktiği yerdir ve okuyucu kullanılmayan bir eğriyi, henüz okumadığı bir
+yerde kullanılan bir eğriden ayırt edemez.
+
+**Sınıf yorumundaki `LerpUnclamped` kuralı asıl değerli kısım.** `OutBack` kasten 0..1 aralığını aşar —
+overshoot eğrinin bütün amacı. `Mathf.Lerp` kendi `t`'sini clamp'lediği için overshoot'u **sessizce**
+yutar ve geriye yalnızca doğrusal görünen bir animasyon kalır. Bu kuralı yazmayan bir easing tablosu,
+kullanıcısını fark edilmeyen bir hataya sokar.
+
+---
+
 ## Uygulama notları
 
 Karar sayılacak kadar büyük değil ama koddan okunmayacak kadar da örtük olan şeyler.
@@ -1284,6 +1411,11 @@ Karar sayılacak kadar büyük değil ama koddan okunmayacak kadar da örtük ol
 - **Shuffle animasyonunda ölçek blok başına yazılır**, `BoardView`'un transform'una değil.
   Ölçeklenmiş bir parent "1 birim = 1 hücre" varsayımını bozar (Karar 10), ve 0 ölçekte bir çocuğun
   world pozisyonunu ayarlamak sıfıra bölmedir.
+
+- **`FitCamera` dolgusu eksende asimetrikti.** `cameraPadding` karşılaştırmadan *sonra*
+  `orthographicSize`'a ekleniyordu, yani her zaman yarım-yükseklik biriminde. Dikey ekranda yatay
+  karşılığı `padding * aspect`'e düşüyor (0.5 → 0.28) ve tahta çerçevesi kadrajdan taşıyordu. Dolgu artık
+  her iki ihtiyaca `max`'tan **önce** ekleniyor.
 
 - **HUD uGUI kullanıyor, tahta kullanmıyor — ve bu bir çelişki değil.** Tahtayı uGUI'den uzak tutan
   sebep canvas rebuild'dir: her karede yüz blok hareket ederse canvas her kare yeniden kurulur. Hamlede
