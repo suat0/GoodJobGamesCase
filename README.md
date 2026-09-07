@@ -9,6 +9,10 @@ The case names performance — memory, CPU, GPU — as its focus, so that is wha
 organised around. The short version: **the game rules never touch the engine, and nothing allocates
 after the board is built.**
 
+<p align="center">
+  <img src="Screenshots/gameplay.png" width="320" alt="A 10x10 board mid-play">
+</p>
+
 ---
 
 ## The rules, as implemented
@@ -102,27 +106,39 @@ raycast. The whole board has **one** `Update`; no block has one of its own.
 ### Measured, not argued
 
 A claim about performance should be looked at rather than believed. From the editor Stats overlay,
-playing two of the shipped levels:
+across all four shipped levels:
 
-| | 8×8, no Boxes | 10×10, eight Boxes |
-|---|---|---|
-| Batches | 4 | 5 |
-| SetPass calls | 3 | 3 |
-| Saved by batching | 65 | 101 |
+| | `Level_2x2` | `Level_4x10` | `Level_8x8_NoBoxes` | `Level_10x10` |
+|---|---|---|---|---|
+| Occupied cells | 4 | 39 | 64 | 100 |
+| **Saved by batching** | **5** | **40** | **65** | **101** |
+| Batches | 5 | 5 | 4 | 5 |
+| SetPass calls | 3 | 3 | 3 | 3 |
 
-Two things fall out of the arithmetic. **The whole world is exactly one batch**: 64 blocks plus
-backdrop plus frame is 66 renderers and 65 draws were saved; 100 plus the same two is 102 and 101 were
-saved. Both are exactly `N − 1`. And **`SetPass calls` stayed at 3** while the board grew from 64 cells
-to 100 — the GPU state changes do not scale with the board.
+Each board draws its cells plus a backdrop and a frame, so the renderer count is *cells + 2* — and in
+every column the draws saved are exactly one fewer. **The whole world is a single batch**, from four
+sprites to a hundred and two.
 
-The three passes are the world atlas, the HUD's panel sprites, and TMP's text shader. The extra batch
-in the right-hand column is the objective icon, an `Image` sitting between two runs of text in the HUD
-hierarchy; merging it back would save one draw call and cost the clarity of the layout.
+`SetPass calls` stayed at **3** across a 25× range in board size: the GPU state changes do not scale
+with the board. The three passes are the world atlas, the HUD's panel sprites, and TMP's text shader.
+
+<p align="center">
+  <img src="Screenshots/batching.png" width="380" alt="Stats overlay on the 10x10 level: 5 batches, 101 saved by batching, 3 SetPass calls">
+</p>
+
+`Level_8x8_NoBoxes` is the only column with 4 batches rather than 5, and the reason is the HUD, not the
+board: with no Boxes there is no objective, so its icon is hidden. That icon is an `Image` sitting
+between two runs of text, and it splits the canvas where the others do not. Merging it back would save
+one draw call and cost the clarity of the layout.
 
 **With shards on screen the batch count does not move**, which is the whole reason effects are pooled
-`SpriteRenderer`s instead of a `ParticleSystem`.
+`SpriteRenderer`s rather than a `ParticleSystem`.
 
 The Profiler's memory module reports **`GC allocated in frame: 0 B`** while playing.
+
+<p align="center">
+  <img src="Screenshots/allocation.png" width="560" alt="Profiler memory module: GC allocated in frame, 0 B">
+</p>
 
 Also verified: the engine-free boundary, by the compiler, and 63 test cases across 6 fixtures covering
 group finding and adjacency, icon tiers, gravity segmentation and Box damage, blast ordering, deadlock
@@ -189,6 +205,10 @@ allows:
 
 A seed of `0` means a fresh board every run; any other value reproduces the same board exactly, which
 is what makes Core testable.
+
+| `Level_4x10` — width-limited framing | `Level_2x2` — the smallest board allowed |
+|:---:|:---:|
+| <img src="Screenshots/level_4x10.png" width="380" alt="A wide, short board"> | <img src="Screenshots/level_2x2.png" width="380" alt="A 2x2 board"> |
 
 Worth knowing if you want to watch the deadlock shuffle: on a full 10×10 board it essentially never
 fires — 2000 simulated playthroughs triggered it zero times, because a board that size always has a
