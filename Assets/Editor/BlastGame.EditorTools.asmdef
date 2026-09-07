@@ -1,0 +1,21 @@
+{
+    "name": "BlastGame.EditorTools",
+    "rootNamespace": "BlastGame.Game.EditorTools",
+    "references": [
+        "BlastGame.Core",
+        "BlastGame.Game",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

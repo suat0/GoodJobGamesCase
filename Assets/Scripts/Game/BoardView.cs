@@ -51,6 +51,12 @@ namespace BlastGame.Game
         [Tooltip("World units of empty space around the board.")]
         [SerializeField] private float cameraPadding = 0.5f;
 
+        [Tooltip("Nine-sliced panel drawn behind the grid. Optional, and decorative only - it is " +
+                 "sized here because only this class knows how big the board turned out to be.")]
+        [SerializeField] private SpriteRenderer boardFrame;
+
+        [SerializeField] private float framePadding = 0.3f;
+
         [Header("Motion")]
         [Tooltip("Fall acceleration in cells per second squared. Distance still sets the duration, " +
                  "so a long fall takes longer - it just does not travel at a constant rate.")]
@@ -195,6 +201,7 @@ namespace BlastGame.Game
             }
 
             FitCamera();
+            FitFrame();
         }
 
         // Full rebuild, not a diff: first draw and post-shuffle redraw only. Ordinary moves go
@@ -478,14 +485,29 @@ namespace BlastGame.Game
             return colorSprites[cell.Color].ForTier(board.TierAt(index));
         }
 
+        // Sized from the board rather than authored in the scene, so a 2x2 level and a 10x10 level
+        // both get a frame that fits without anyone remembering to resize it.
+        private void FitFrame()
+        {
+            if (boardFrame == null) return;
+
+            boardFrame.transform.position = transform.position;
+            boardFrame.size = new Vector2(
+                board.Cols * CellSize + framePadding * 2f,
+                board.Rows * CellSize + framePadding * 2f);
+        }
+
         // orthographicSize is the half-height in world units, so the width has to be divided by the
         // aspect ratio to be comparable. A 10x2 board is limited by width, a 2x10 board by height.
         private void FitCamera()
         {
-            float verticalNeed = board.Rows * 0.5f * CellSize;
-            float horizontalNeed = board.Cols * 0.5f * CellSize / boardCamera.aspect;
+            // The padding joins each need before the comparison, not the result afterwards. Added at
+            // the end it would be half-height either way, which on a portrait screen shrinks to a
+            // fraction of itself horizontally - and a wide board would touch both edges.
+            float verticalNeed = board.Rows * 0.5f * CellSize + cameraPadding;
+            float horizontalNeed = (board.Cols * 0.5f * CellSize + cameraPadding) / boardCamera.aspect;
 
-            boardCamera.orthographicSize = Mathf.Max(verticalNeed, horizontalNeed) + cameraPadding;
+            boardCamera.orthographicSize = Mathf.Max(verticalNeed, horizontalNeed);
 
             // Centre on the board rather than requiring the board to sit at the world origin.
             Vector3 cameraPosition = transform.position;
