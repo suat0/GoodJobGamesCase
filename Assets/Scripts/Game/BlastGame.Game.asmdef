@@ -3,7 +3,8 @@
     "rootNamespace": "BlastGame.Game",
     "references": [
         "GUID:a9fcde201718c484c9c03d858b722795",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.TextMeshPro"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
