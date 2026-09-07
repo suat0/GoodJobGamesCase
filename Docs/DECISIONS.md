@@ -1168,6 +1168,130 @@ yapacağız. 100 `SpriteRenderer`'a sprite atamak zaten mikrosaniyeler; ama dü�
 
 ---
 
+## Karar 26 — Deadlock'u kim çözer: `Board` mı, oyun akışı mı?
+
+### Seçenekler
+- **A)** `TryBlast` deadlock görürse kendi içinde shuffle eder
+- **B)** `Board` durumu bildirir (`IsDeadlocked`) ve çareyi sunar (`TryResolveDeadlock`); çağıran karar verir
+
+### A'nın eleme gerekçesi
+Basit görünür ama **kazanılmış tahtayı da karıştırır.** Hamle akışında deadlock kontrolü kazanma ve
+kaybetme kontrollerinden **sonra** gelmek zorunda — bu bir oyun kuralı, tahta kuralı değil. A seçilirse
+o sıra `Board`'un içine gömülür ve `GameSession` onu değiştiremez.
+
+### Seçilen: B
+`Board` durumu söyler ve çareyi sunar; sırayı `GameSession.Play` kurar.
+
+**Yan fayda:** `GameSession.Begin()` aynı iki çağrıyı kullanıyor → doğuştan deadlock'lu tahta için ayrı
+bir garanti yoluna gerek kalmıyor ve shuffle kodu nadir bir tahtada değil, normal oyunda ısınıyor (Karar 16).
+
+---
+
+## Karar 27 — Bir hamlenin sonucu view'a nasıl taşınır?
+
+### Seçenekler
+- **A)** Her hamlede yeni bir sonuç nesnesi, içinde `List<int>`'ler
+- **B)** Tek örnek, her hamlede yeniden doldurulan sabit diziler
+
+### A'nın eleme gerekçesi
+Hamle başına 5-6 allocation demek; "oyun sırasında sıfır allocation" hedefiyle doğrudan çelişir.
+`List` ayrıca kapasitesi oturana kadar ilk hamlelerde büyümeye devam eder.
+
+### Seçilen: B
+Diziler `M*N` ile sınırlı, çünkü bir hamlede hiçbir liste hücre sayısını aşamaz: her hamle **indiği
+hücreyle** tekilleşir ve iki blok aynı hücreye inmez. Yani `List`'in sunduğu tek şey — büyüme — hiç
+gerçekleşmeyen şeydir.
+
+**Bedeli ve kuralı:** dinleyici veriyi çağrı sırasında tüketir, **saklamaz.** Saklanan bir referans bir
+sonraki hamlenin verisini gösterir.
+
+`Clear()` sadece sayaçları sıfırlar. Altta kalan bayat değerlere span'ler üzerinden erişilemez;
+kimsenin okuyamayacağı veriyi gizlemek için her hamlede binlerce int silmek boş iş olurdu.
+
+### Alt karar 27a — Yeni bloklar: ayrı liste mi, tahta dışı index mi?
+Yeni blok, kaynağı **tahtanın üstünde** bir index olan sıradan bir hamle olarak kaydediliyor:
+`SpawnSource(col, order) = (rows + order) * cols + col`.
+
+Aynı satır/sütun aritmetiği bu index'i çözdüğünde tahtanın üstünde, doğru sütunda bir konum verir —
+yani view'ın **iki değil tek** kuralı olur: "her bloğu kaynağından hedefine taşı".
+
+İkinci fayda: tahtanın üstünde doğan blok hiç oturmamıştır, dolayısıyla B2 filtresi (Karar 5) onun
+üstündeki tıklamayı ayrı bir özel duruma gerek kalmadan zaten reddeder.
+
+---
+
+## Karar 28 — Shuffle'ın garanti adımı komşu çifti nasıl seçer?
+
+Garanti adımı (Karar 9) bir komşu renkli hücre çiftine ihtiyaç duyuyor.
+
+### Seçenekler
+- **A)** Bulunan ilk çift
+- **B)** Tüm çiftleri topla, aralarından birini seç
+- **C)** Reservoir sampling (k=1): n. aday `1/n` olasılıkla tutulur
+
+### Eleme gerekçeleri
+- **A** — grubu her shuffle'da tahtanın **aynı köşesine** koyar. Oyuncu bu örüntüyü iki üç shuffle'da
+  görür ve tahtaya inanmayı bırakır. Doğruluk sorunu değil, güven sorunu.
+- **B** — boyutu önceden bilinmeyen bir liste ayırır.
+
+### Seçilen: C
+Aynı anda tek aday tutulur → allocation yok, dağılım düzgün, tarama tek geçiş.
+
+Tarama sadece **Up ve Right** yönlerine bakıyor: böylece her sırasız komşu çifti sampler'a tam olarak
+bir kez sunulur. Dört yön de aynı düzgünlükte örneklerdi (her çift iki kez sunulurdu) ama işi ikiye
+katlar ve okuyanı bunu ispatlamak için durdurur.
+
+### Alt karar 28a — Renk histogramı neden `ColorCount` değil 256?
+`ColorCount` boyutunda bir histogram, palet dışı bir renk taşıyan tahtada (elle yazılmış seviye, test
+tahtası) index taşırır — yani **savunma amaçlı yolun kendisi** crash eder. `byte` renginin tüm alanı
+1 KB tutuyor; sabit 256 alınıyor.
+
+---
+
+## Karar 29 — Sunum katmanı: sessizce toparlanmak yerine fırlatmak
+
+`BlockPool.Rent` havuz tükenince büyümek yerine `InvalidOperationException` fırlatıyor.
+
+**Gerekçe:** kapasite tahtadan türüyor (`CellCount + Cols`), dolayısıyla tükenmesi absorbe edilecek bir
+yük tepesi **değil** — view'ın bir bloğu iade etmediği anlamına gelir. Sessizce allocate eden bir havuz,
+var olmak için kurulduğu bug'ı gizler.
+
+Aynı refleks üç yerde daha:
+- `BlockPool.Return` çift iadeyi yakalar. Aynı blok iki hücreye verilirse hata bambaşka bir yerde
+  "kayıp blok" olarak görünür.
+- `FallAnimator.Begin` bir hücreye zaten uçan blok varken ikincisini reddeder.
+- `BoardView.ValidateSprites` `Bind` anında bir kez koşar. Atanmamış bir sprite aksi halde çizim
+  döngüsünün ortasında, hangi rengin bağlanmadığını söylemeyen bir null reference olarak çıkar.
+
+Bunların ortak noktası: hepsi **sessiz bozulmayı gürültülü hataya çeviriyor.** Sessiz olanların üçü de
+ekranda yanlış bir görüntü olarak belirir, ki bakarak fark edilmez.
+
+---
+
+## Uygulama notları
+
+Karar sayılacak kadar büyük değil ama koddan okunmayacak kadar da örtük olan şeyler.
+
+- **`GroupFinder` stack sınırı.** Hücre **push edilirken** işaretlenir, pop edilirken değil. Pop'ta
+  işaretlense aynı hücreyi dört komşusu da itebilir ve stack hücre sayısını aşabilirdi. Push'ta
+  işaretleme her hücrenin en fazla bir kez itilmesini garanti eder → `stack` boyutu tam olarak `M*N`.
+  Karar 3'ün iterative DFS tercihini tamamlayan detay.
+
+- **`FallAnimator` hamle listesi.** Silinen slotun yerine son eleman çekiliyor; `Tick` bu yüzden
+  **geriye doğru** dönüyor. Öne çekilen eleman o karede zaten işlenmiş olur → ne atlanır ne iki kez
+  işlenir.
+
+- **Shuffle animasyonunda ölçek blok başına yazılır**, `BoardView`'un transform'una değil.
+  Ölçeklenmiş bir parent "1 birim = 1 hücre" varsayımını bozar (Karar 10), ve 0 ölçekte bir çocuğun
+  world pozisyonunu ayarlamak sıfıra bölmedir.
+
+- **HUD uGUI kullanıyor, tahta kullanmıyor — ve bu bir çelişki değil.** Tahtayı uGUI'den uzak tutan
+  sebep canvas rebuild'dir: her karede yüz blok hareket ederse canvas her kare yeniden kurulur. Hamlede
+  bir kez değişen dört etiket tam ters durum. Olmayan bir maliyetten kaçınmak için metni sprite'la
+  çizmek kargo kültü olurdu. HUD ayrı bir Canvas'ta duruyor, o rebuild başka hiçbir şeye dokunmuyor.
+
+---
+
 ## Dokümandaki tutarsızlıklar
 
 README'ye yazılacak — dokümanın gerçekten okunduğunu gösterir.
