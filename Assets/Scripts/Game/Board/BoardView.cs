@@ -118,24 +118,15 @@ namespace BlastGame.Game
 
         private float shuffleElapsed = NotShuffling;
 
-        // Where FitCamera put the camera. Kept apart from the camera's own position because the shake
-        // adds to it every frame; reading the camera back would let each shake start from the last
-        // shake's offset and walk the view off the board.
-        private Vector3 cameraBase;
-
-        private float shakeElapsed = NotShaking;
-
-        private float shakeStrength;
-
-        private const float NotShaking = -1f;
+        // Owns the framing and the shake. Built in Bind from the serialized settings above, the same
+        // way the fall animator takes its gravity - one inspector, several small objects behind it.
+        private BoardCamera framing;
 
         private bool shuffleRedrawn;
 
         private const float NotShuffling = -1f;
 
         private bool IsShuffling => shuffleElapsed >= 0f;
-
-        private bool IsShaking => shakeElapsed >= 0f;
 
         // OnEnable/OnDisable and named methods, never Start/OnDestroy and never a lambda: an object
         // that is disabled and re-enabled would end up subscribed twice, and a lambda cannot be
@@ -198,9 +189,11 @@ namespace BlastGame.Game
 
                 effectPool = new BlockPool(blockPrefab, effectsRoot, effectCapacity);
                 effectRunner = new EffectRunner(effectPool, effectCapacity);
+
+                framing = new BoardCamera(boardCamera, cameraPadding, shakeMagnitude, shakeDuration);
             }
 
-            FitCamera();
+            framing.Frame(board.Rows, board.Cols, CellSize, transform.position);
             FitFrame();
         }
 
@@ -289,8 +282,8 @@ namespace BlastGame.Game
 
             // A Box breaking is the rarest thing a move can do and the only one worth two moves, so it
             // always lands; an ordinary blast has to be big before it gets the same treatment.
-            if (result.BrokenBoxes.Length > 0) BeginShake(1f);
-            else if (result.Removed.Length >= shakeBlastThreshold) BeginShake(0.6f);
+            if (result.BrokenBoxes.Length > 0) framing.Shake(1f);
+            else if (result.Removed.Length >= shakeBlastThreshold) framing.Shake(0.6f);
         }
 
         // Lives here because this class owns both halves of the mapping: the layout, and the animator
@@ -330,7 +323,7 @@ namespace BlastGame.Game
             fallAnimator.Tick(deltaTime);
             effectRunner.Tick(deltaTime);
             TickShuffleAnimation(deltaTime);
-            TickShake(deltaTime);
+            framing.Tick(deltaTime);
         }
 
         // A shuffle moves no blocks, it swaps colour values, so without feedback the whole board would
@@ -372,47 +365,14 @@ namespace BlastGame.Game
             }
 
             // 1 at both ends, 0 in the middle: one expression for shrink-then-grow, no phase flag.
-            SetAllBlockScales(Mathf.Abs(1f - 2f * t));
+            // Eased, so the blocks leave and arrive softly instead of sliding at a constant rate.
+            SetAllBlockScales(Easing.SmoothStep(Mathf.Abs(1f - 2f * t)));
         }
 
         // A landed block flexes, and that is all: the animator has already released the cell, so the
         // block is settled and tappable while this runs. Impact feedback must never cost a tap.
         private void HandleBlockLanded(BlockView block) =>
             effectRunner.Squash(block, landingSquash, landingSquashDuration);
-
-        private void BeginShake(float strength)
-        {
-            // Restarted, not stacked: a chain of Box breaks should read as one knock, not accumulate
-            // into a camera that never settles.
-            shakeElapsed = 0f;
-            shakeStrength = strength;
-        }
-
-        // Two sine waves at unrelated rates rather than a random offset per frame: random reads as
-        // video noise at 60fps, and this costs nothing and always ends where it started.
-        private void TickShake(float deltaTime)
-        {
-            if (!IsShaking) return;
-
-            shakeElapsed += deltaTime;
-            float t = shakeElapsed / shakeDuration;
-
-            if (t >= 1f)
-            {
-                shakeElapsed = NotShaking;
-                boardCamera.transform.position = cameraBase;
-                return;
-            }
-
-            const float Frequency = 42f;
-
-            float amplitude = shakeMagnitude * shakeStrength * (1f - t);
-
-            boardCamera.transform.position = cameraBase + new Vector3(
-                Mathf.Sin(shakeElapsed * Frequency) * amplitude,
-                Mathf.Cos(shakeElapsed * Frequency * 1.37f) * amplitude * 0.6f,
-                0f);
-        }
 
         private void SetAllBlockScales(float scale)
         {
@@ -495,26 +455,6 @@ namespace BlastGame.Game
             boardFrame.size = new Vector2(
                 board.Cols * CellSize + framePadding * 2f,
                 board.Rows * CellSize + framePadding * 2f);
-        }
-
-        // orthographicSize is the half-height in world units, so the width has to be divided by the
-        // aspect ratio to be comparable. A 10x2 board is limited by width, a 2x10 board by height.
-        private void FitCamera()
-        {
-            // The padding joins each need before the comparison, not the result afterwards. Added at
-            // the end it would be half-height either way, which on a portrait screen shrinks to a
-            // fraction of itself horizontally - and a wide board would touch both edges.
-            float verticalNeed = board.Rows * 0.5f * CellSize + cameraPadding;
-            float horizontalNeed = (board.Cols * 0.5f * CellSize + cameraPadding) / boardCamera.aspect;
-
-            boardCamera.orthographicSize = Mathf.Max(verticalNeed, horizontalNeed);
-
-            // Centre on the board rather than requiring the board to sit at the world origin.
-            Vector3 cameraPosition = transform.position;
-            cameraPosition.z = boardCamera.transform.position.z;
-
-            cameraBase = cameraPosition;
-            boardCamera.transform.position = cameraPosition;
         }
 
         // Checked once, at bind time. An unassigned sprite otherwise surfaces as an invisible block or
