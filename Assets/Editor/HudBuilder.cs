@@ -10,7 +10,12 @@ namespace BlastGame.Game.EditorTools
 {
     // Rebuilds the HUD from scratch and saves the scene. The layout lives here rather than in the
     // scene file alone so it can be read, reviewed and re-run; a canvas assembled by dragging is a
-    // diff nobody can review.
+    // diff nobody can review, and the palette would be thirteen colours scattered across a YAML file.
+    //
+    // A generator, not a binding. The scene is what ships and what runs; running this replaces the
+    // HUD wholesale, so an edit made in the inspector is lost the next time it runs. Nothing detects
+    // that drift - which is the price of keeping the layout readable, and worth naming rather than
+    // discovering.
     public static class HudBuilder
     {
         private const string ScenePath = "Assets/Scenes/Game.unity";

@@ -4,34 +4,11 @@ using UnityEngine;
 
 namespace BlastGame.Game.EditorTools
 {
-    // Batch-mode entry points for the one-off editor chores this project needs, so the setup steps
-    // are recorded as code rather than as a list of menu clicks in a README.
+    // How the HUD's font asset was produced. The asset itself is committed, so nothing needs this to
+    // open the project - it is here because the settings behind a generated asset are not readable
+    // from the asset, and a font rebuilt with different ones renders visibly differently.
     public static class PolishSetup
     {
-        // TMP ships its runtime in the package but its fonts and shaders in a .unitypackage that has
-        // to be unpacked into Assets. Interactive Unity asks the first time a TMP object is created;
-        // there is nobody to ask in batch mode.
-        public static void ImportTmpEssentials()
-        {
-            const string Package =
-                "Library/PackageCache/com.unity.ugui@e375ff18e90f/Package Resources/TMP Essential Resources.unitypackage";
-
-            // ImportPackage is asynchronous, so this method must not be run with -quit: the editor
-            // would shut down mid-unpack. It exits from the completion callback instead.
-            AssetDatabase.importPackageCompleted += OnImported;
-            AssetDatabase.importPackageFailed += OnFailed;
-
-            AssetDatabase.ImportPackage(Package, false);
-        }
-
-        private static void OnImported(string packageName)
-        {
-            AssetDatabase.Refresh();
-
-            Debug.Log($"Imported {packageName}.");
-            EditorApplication.Exit(0);
-        }
-
         // Builds the HUD's font asset from the TTF. Done in code so the atlas settings are recorded
         // rather than remembered: a font asset rebuilt by hand with a different padding or sampling
         // size renders visibly differently.
@@ -79,12 +56,6 @@ namespace BlastGame.Game.EditorTools
             AssetDatabase.Refresh();
 
             Debug.Log($"Font asset written to {Output} with {asset.characterTable.Count} characters.");
-        }
-
-        private static void OnFailed(string packageName, string message)
-        {
-            Debug.LogError($"Importing {packageName} failed: {message}");
-            EditorApplication.Exit(1);
         }
     }
 }
