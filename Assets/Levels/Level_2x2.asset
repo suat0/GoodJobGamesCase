@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbe605d97d14a48e1b150b96ae7da3ad, type: 3}
+  m_Name: Level_2x2
+  m_EditorClassIdentifier: 
+  rows: 2
+  cols: 2
+  colorCount: 6
+  thresholdA: 1
+  thresholdB: 2
+  thresholdC: 3
+  boxCount: 1
+  moveLimit: 8
+  seed: 0

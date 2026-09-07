@@ -176,9 +176,34 @@ glyphs during play — which allocates. That decision has a known expiry date, r
 1. Open the project in Unity **6000.2.6f2**.
 2. Open `Assets/Scenes/Game.unity` and press Play.
 
-The level is a ScriptableObject at `Assets/Levels/Level_10x10.asset` — rows, columns, colour count,
-the three icon thresholds, Box count, move limit and seed. A seed of `0` means a fresh board every
-run. Editing that asset is the whole configuration surface; a new level is a new asset, not new code.
+A level is a ScriptableObject — rows, columns, colour count, the three icon thresholds, Box count,
+move limit and seed. Which one is played is a field on the `Game` object in the scene, so **a new
+level is a new asset, not new code**. Four ship, chosen to cover the ends of the range the case
+allows:
+
+| Asset | What it is for |
+|---|---|
+| `Level_10x10` | The default. 10×10, six colours, eight Boxes, twenty moves — Example 1 from the case document |
+| `Level_4x10` | Wide and short, so the camera fit is limited by width rather than height |
+| `Level_2x2` | The smallest board the case allows. Six colours on four cells deadlocks often, which is the quickest way to watch the shuffle |
+| `Level_8x8_NoBoxes` | No Boxes, so no objective and no move limit — the shape both of the case document's examples have |
+
+A seed of `0` means a fresh board every run; any other value reproduces the same board exactly, which
+is what makes Core testable.
+
+### Editor tooling
+
+`Assets/Editor/` holds three generators, not runtime code. Everything they produce is committed, so
+the project opens and runs without them; they are here because the settings behind a generated asset
+cannot be read back out of it.
+
+- `HudBuilder` composes the HUD and saves the scene. The scene is what ships — this is a generator, so
+  running it replaces the HUD wholesale. It exists so the layout and its thirteen colours are readable
+  in one file instead of scattered through scene YAML.
+- `UiTextureGenerator` writes `Backdrop.png` and `Frame.png`. Those two are the only images here that
+  did not come with the case, and this is where the shapes and the reason they live in `Assets/Art`
+  are recorded.
+- `PolishSetup` builds the font asset at its exact sampling size, padding and character set.
 
 ### Tests
 
