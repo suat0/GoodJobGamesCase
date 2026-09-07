@@ -4,8 +4,8 @@ using NUnit.Framework;
 namespace BlastGame.Tests
 {
     /// <summary>
-    /// Tests 3, 4 and 9 from the plan in DECISIONS.md. The selection criterion there is "would I notice
-    /// if this broke silently?" - all three fail in ways the screen does not show.
+    /// Adjacency, minimum group size and row wrapping. The criterion for picking these was "would I
+    /// notice if it broke silently?" - all three fail in ways the screen does not show.
     /// </summary>
     [TestFixture]
     public class GroupFinderTests

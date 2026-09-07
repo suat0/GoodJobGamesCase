@@ -5,13 +5,13 @@ using NUnit.Framework;
 namespace BlastGame.Tests
 {
     /// <summary>
-    /// Test 1 from the plan: icon tiers at their boundary values.
+    /// Icon tiers at their boundary values.
     /// </summary>
     /// <remarks>
-    /// Rated the most valuable test in DECISIONS.md for two reasons. Off-by-one is the classic mistake
-    /// in threshold code, and the case document contradicts itself here - Example 1 lists C=9 and then
-    /// says "more than 10", while Example 2 is consistent. These cases pin down the reading we chose
-    /// (strictly greater), so a later "fix" cannot quietly change it.
+    /// Worth more than its size for two reasons. Off-by-one is the classic mistake in threshold code,
+    /// and the case document contradicts itself here - Example 1 lists C=9 and then says "more than
+    /// 10", while Example 2 is consistent. These cases pin down the reading chosen (strictly greater),
+    /// so a later "fix" cannot quietly change it.
     /// </remarks>
     [TestFixture]
     public class IconTierTests

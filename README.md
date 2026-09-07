@@ -23,14 +23,6 @@ after the board is built.**
 | Settled blocks stay tappable while others are still falling | `BoardView.TryPickCell` |
 | Deadlock is detected and resolved without a blind reshuffle, and the resolution cannot fail on a board this game can generate | `DeadlockResolver.cs` |
 
-Two inconsistencies in the case document, and how they were read:
-
-1. The constraints say 2–10 columns, but Example 1 uses `N = 12`. **The page-one constraints are
-   treated as authoritative.** The code still runs whatever the config gives it, with no hard-coded
-   ceiling, so both readings work.
-2. Example 1 writes `C = 9` and then says "more than 10". Example 2 is self-consistent, so the rule
-   is read as **`> C`**.
-
 ---
 
 ## Architecture
@@ -156,15 +148,6 @@ the blocks' material. Everything else is motion:
   ten times the work.
 - The objective shows the Box sprite and a count rather than the word "Boxes".
 
-### Accessibility
-
-The supplied art gives **every colour a different icon**, not just a different hue, so the board stays
-readable without colour vision. That is the case's own design decision and it is preserved: the icon
-tiers change the icon, never remove the distinction.
-
-Screen shake is small and fires only on a Box break or a large blast. A production build would make it
-switchable.
-
 ---
 
 ## Third party
@@ -242,5 +225,4 @@ Unity → **Window → General → Test Runner → EditMode → Run All**, or fr
 | File | What it holds |
 |---|---|
 | `ARCHITECTURE.md` | The rules the code holds itself to, the data model, and the algorithms worth explaining |
-| `DECISIONS.md` | The decisions behind them, with the alternatives that were eliminated |
 | `FUTURE_WORK.md` | What a production version would add, and the threshold for each |

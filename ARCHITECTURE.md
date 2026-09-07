@@ -1,8 +1,7 @@
 # Architecture
 
 The technical companion to the README: the rules the code holds itself to, the data model, and the
-algorithms worth explaining. Reasoning for the choices behind them is in `DECISIONS.md`; what a
-production version would add is in `FUTURE_WORK.md`.
+algorithms worth explaining. What a production version would add on top is in `FUTURE_WORK.md`.
 
 ---
 

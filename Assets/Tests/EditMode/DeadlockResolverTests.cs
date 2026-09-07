@@ -4,9 +4,10 @@ using NUnit.Framework;
 namespace BlastGame.Tests
 {
     /// <summary>
-    /// Tests 6 and 7 from the plan in DECISIONS.md, plus the two properties that turned out to be
-    /// testable once the resolver was written: that detection is right, and that the forced group does
-    /// not always land in the same place.
+    /// The two guarantees the resolver is built on - that a shuffle always produces a playable board,
+    /// and that it rearranges rather than reissues - plus the two properties that turned out to be
+    /// testable once it was written: that detection is right, and that the forced group does not
+    /// always land in the same place.
     /// </summary>
     /// <remarks>
     /// Most of these run over 200 seeds rather than one. A guarantee that holds for seed 42 is not a

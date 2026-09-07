@@ -1,6 +1,6 @@
 # Bilinçli Kapsam Dışı Bırakılanlar
 
-Mimari için `ARCHITECTURE.md`, kararların gerekçeleri için `DECISIONS.md`.
+Mimarinin kendisi için `ARCHITECTURE.md`.
 
 Bu dosya tek bir soruyu cevaplıyor: **bu oyun üretime çıksaydı ne eklenirdi, ve her biri ne zaman
 kendini ödemeye başlardı?** Her madde bir eşikle birlikte yazılı — çünkü asıl bilgi listenin kendisi
@@ -76,7 +76,7 @@ ağırlıklı spawner'ın orada çözeceği bir sorun yok, ayarlayacağı bir zo
 
 ### Otomatik seviye doğrulama (solver bot)
 **Ne:** Bot'ların seviyeleri binlerce kez oynayıp çözülebilirliği doğrulaması.
-**Bağlam:** `DECISIONS.md`'de araştırılan sektör pratiği (bkz. arXiv 2409.06349).
+**Bağlam:** sektör pratiği bu yönde (bkz. arXiv 2409.06349).
 **Bizde durum:** Üretim tarafında bunu **tek bir kısıta indirgedik** — "en üst satıra Box konmaz" —
 ve doğrulama tarafında rastgele oynayan bir bot'u geçici olarak kullandık: oynanabilirlikle ilgili
 iki hatanın ikisi de ölçümle bulundu, muhakemeyle değil. O bot repoda değil çünkü ölçtüğü özellikler artık
