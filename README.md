@@ -20,7 +20,7 @@ after the board is built.**
 | Emptied cells refill from above and from blocks spawned off the top of the column | `GravityResolver.cs` |
 | Box obstacle: ignores gravity, blocks the fall of everything above it, 2 health, takes **one** damage per adjacent group — not per block | `Board.cs`, `Cell.cs` |
 | Settled blocks stay tappable while others are still falling | `BoardView.TryPickCell` |
-| Deadlock is detected and resolved without a blind reshuffle | `DeadlockResolver.cs` |
+| Deadlock is detected and resolved without a blind reshuffle, and the resolution cannot fail on a board this game can generate | `DeadlockResolver.cs` |
 
 Two inconsistencies in the case document, and how they were read:
 
@@ -44,7 +44,7 @@ Assets/Scripts/
 │   ├── Board/     BoardView, BlockView, BlockPool, BoardCamera
 │   ├── Effects/   FallAnimator, EffectRunner, Easing
 │   └── UI/        HudView
-└── Tests/EditMode/  61 test cases over Core, engine-free
+└── Tests/EditMode/  63 test cases over Core, engine-free
 ```
 
 ### 1. Core cannot reference the engine
@@ -113,7 +113,7 @@ raycast. The whole board has **one** `Update`; no block has one of its own.
 Verified in this repository:
 
 - The engine-free boundary, by the compiler.
-- 61 test cases across 6 fixtures, covering group finding and adjacency, icon tiers, gravity
+- 63 test cases across 6 fixtures, covering group finding and adjacency, icon tiers, gravity
   segmentation and Box damage, blast ordering, deadlock detection, shuffle guarantees, and
   that generation never produces a board with no legal move.
 

@@ -1459,6 +1459,73 @@ Kapsam boşluğunu görünür kılan şey **aralığın ucundaki bir config**'ti
 
 ---
 
+## Karar 37 — Deadlock çözümü iki kademeli: takas, sonra atama
+
+Karar 36'nın düzelttiği açığın ardından kalan soru: çözücü **başarısız olmaya hakkı var mı?**
+
+### Ölçüm önce
+
+2000 oyun × 3 config, rastgele oynayan bir bot:
+
+| Config | Kazandı | Hamle bitti | **Tahta öldü** | Shuffle görüldü |
+|---|---|---|---|---|
+| 2×2, K=3, Box=1 | 1566 | 0 | **434 (%22)** | 441 |
+| 2×3, K=6, Box=1 | 1664 | 0 | **336 (%17)** | 1284 |
+| 10×10, K=6, Box=8 | 0 | 2000 | 0 | **0** |
+
+İki şey birden çıkıyor. Küçük tahtalarda oyunların beşte biri "çözülemedi" diye bitiyordu — üstelik
+HUD `"Out of moves"` yazarak. Ve varsayılan 10×10'da **shuffle 2000 oyunda bir kez bile tetiklenmedi**:
+case'in başlıca isteklerinden biri, teslim edilen varsayılan seviyede görünmez. Küçük config'ler onu
+görmenin tek yolu, ki `Level_2x2`'nin varlık sebebi de bu.
+
+### Neden başarısız oluyordu
+
+Grup yapmak iki ayrı şey gerektiriyor ve ikisi farklı sebeplerle eksik olabiliyor:
+
+- **Koyacak yer** — iki komşu renkli hücre
+- **Yapacak malzeme** — en az iki kez geçen bir renk
+
+`Survey` ikisini tek bir bool'a katlıyordu. Malzeme yoksa pes ediyordu — *yer varken bile*. Ve malzeme
+gerekiyordu çünkü `ForceGroup` **takas** eder: hiçbir renk iki kez geçmiyorsa hiçbir diziliş bir çift
+üretemez. Bu matematiksel, çözücünün hatası değil.
+
+### Seçilen: kademelendir, kısıtı kaldırma
+
+Karar 28'in "shuffle yeniden dağıtmaz, yeniden dizer" kuralı gerçek bir özellik — shuffle'a "aynı tahta
+karıştı" hissini veren şey o. Kaldırmak yerine korunabildiği yerde korunuyor:
+
+| Kademe | Koşul | Ne yapar |
+|---|---|---|
+| 1 | Bir renk ≥ 2 kez geçiyor | Karıştır + en sık rengi örneklenmiş çifte **takasla** taşı. Renk sayıları birebir korunur |
+| 2 | Hiçbir renk 2 kez geçmiyor | Karıştır + çiftin bir hücresine komşusunun rengini **ata**. Tam bir hücre değişir |
+| Başarısız | İki komşu renkli hücre yok | Renk değiştirmek iki hücreyi komşu yapamaz. Gerçekten çözümsüz |
+
+Kademe 2 mümkün olan en küçük sapma: bir hücre, bir renk. Testle de sabitlendi — bir sayı bir azalıyor,
+bir sayı bir artıyor, başka hiçbir şey değişmiyor.
+
+### Neden tahtanın tamamını yeniden üretmiyoruz
+
+İlk akla gelen çözüm `Generate()`'i tekrar çağırmak. Ama o üç şey birden yapar: renkleri yeniden çeker
+(istediğimiz), **kutuları yeni hücrelere taşır** ve **kutu canlarını sıfırlar**. Sekiz kutunun dördünü
+çatlatmış bir oyuncu ilerlemesinin silindiğini görür.
+
+Sektörün cevabı da bu: engel katmanı asla yeniden üretilmez, sadece renk katmanı. Kademe 2 zaten bunun
+en küçük hâli.
+
+### Sonuç: başarısızlık dalı oyunda erişilemez
+
+Geriye kalan tek başarısızlık "iki komşu renkli hücre yok". Üretilen bir tahtada bu imkânsız: üst satıra
+Box konmuyor (Karar 36'daki invaryant), yani üst satır her zaman baştan sona renkli, ve `LevelConfig`
+en az 2 sütun zorluyor.
+
+Bunun ikinci bir faydası var: `Lost` artık gerçek tahtalarda **sadece** "hamle bitti" anlamına gelebilir,
+yani HUD'daki `"Out of moves"` mesajı ayrıca düzeltmeye gerek kalmadan dürüstleşiyor.
+
+Ölçüm tekrarlandı: üç config'de de **ölü tahta = 0**, ve 2×2'de görülen shuffle sayısı 441'den 875'e
+çıktı — eskiden pes ettiği yerlerde artık çözüyor.
+
+---
+
 ## Uygulama notları
 
 Karar sayılacak kadar büyük değil ama koddan okunmayacak kadar da örtük olan şeyler.

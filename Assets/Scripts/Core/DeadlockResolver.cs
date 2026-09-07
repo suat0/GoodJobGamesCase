@@ -6,8 +6,14 @@ namespace BlastGame.Core
     // Rearranges the colours on the board so at least one blastable group exists, in a single pass:
     // shuffle once for the look of it, then PLACE one group deliberately. Blind shuffle-and-recheck
     // has no bound on how long it runs, which the case document rules out by name.
-    // Only the Color field moves, and the guarantee step swaps rather than overwrites, so colour
-    // counts are preserved.
+    //
+    // Only the Color field is ever written: Boxes, holes and Box health stay exactly where they are.
+    // That is the line this class does not cross, and it is why the remedy is a shuffle rather than a
+    // regenerated board - a player who has cracked half the Boxes must not watch them move and heal.
+    //
+    // Making a group needs two things, and they fail for different reasons: somewhere to PUT it (two
+    // adjacent coloured cells) and something to BUILD it from (a colour that occurs twice). The first
+    // is the only one that can be missing without remedy - see TryResolve.
     public sealed class DeadlockResolver
     {
         // The whole byte domain, not ColorCount: a hand-authored board using a colour outside the
@@ -34,32 +40,54 @@ namespace BlastGame.Core
             colorCounts = new int[ColorDomainSize];
         }
 
-        // False when no rearrangement can produce a group. That is exact, not a guess: it happens when
-        // no colour occurs twice, or when no two coloured cells are adjacent. The level is lost.
+        // False only when no two coloured cells are adjacent, which no amount of recolouring can fix:
+        // a colour cannot make two cells neighbours. That is exact, not a guess, and it cannot happen
+        // on a generated board - the top row never holds a Box, so it is always a full run of colours.
         public bool TryResolve(Span<Cell> cells)
         {
             AssertMatchesBoard(cells);
 
-            if (!Survey(cells, out int slotCount, out int pairLeft, out int pairRight))
+            if (!Survey(cells, out int slotCount, out int pairLeft, out int pairRight, out int bestColorCount))
                 return false;
 
             Shuffle(cells, slotCount);
-            ForceGroup(cells, slotCount, pairLeft, pairRight);
+
+            // Two tiers, and the first is preferred wherever it applies: it preserves every colour
+            // count, so the board reads as the same pieces rearranged rather than a new hand dealt.
+            if (bestColorCount >= GroupFinder.MinBlastableSize)
+                ForceGroup(cells, slotCount, pairLeft, pairRight);
+            else
+                AssignColorToPair(cells, pairLeft, pairRight);
 
             AssertGroupExists(cells, pairLeft, pairRight);
             return true;
         }
 
+        // The fallback, for a board where no colour occurs twice - three cells holding three different
+        // colours, which small boards produce routinely. Swapping cannot help there: rearranging a set
+        // with no repeat still has no repeat, whatever order it is put in.
+        //
+        // Writing can, and one cell is the smallest deviation available. It breaks the "a shuffle
+        // rearranges, it does not reissue" rule the tier above keeps - deliberately, only here, and by
+        // exactly one cell. The alternative is a level with no move and no remedy.
+        private static void AssignColorToPair(Span<Cell> cells, int pairLeft, int pairRight)
+        {
+            cells[pairRight].Color = cells[pairLeft].Color;   // in place, never through a local copy
+        }
+
         // One walk gives everything the rest needs: the coloured cells, the colour histogram, and one
         // adjacent pair. Single pass because the feasibility check IS the pair the guarantee step uses.
-        private bool Survey(ReadOnlySpan<Cell> cells, out int slotCount, out int pairLeft, out int pairRight)
+        // Returns whether a group can be PLACED; bestColorCount says whether one can be BUILT by
+        // swapping, which is what picks the tier. Reported apart because they are different failures.
+        private bool Survey(ReadOnlySpan<Cell> cells, out int slotCount, out int pairLeft, out int pairRight,
+                            out int bestColorCount)
         {
             slotCount = 0;
             pairLeft = -1;
             pairRight = -1;
+            bestColorCount = 0;
 
             int pairCount = 0;
-            int bestColorCount = 0;
 
             for (int i = 0; i < cells.Length; i++)
             {
@@ -77,9 +105,9 @@ namespace BlastGame.Core
 
             ClearCounts(cells, slotCount);
 
-            // Necessary and together sufficient: a colour occurring twice is what a group is made of,
-            // two adjacent coloured cells are where it can be put.
-            return pairCount > 0 && bestColorCount >= GroupFinder.MinBlastableSize;
+            // Only the placement question. Whether a colour occurs twice decides which tier runs, not
+            // whether the resolver can run at all.
+            return pairCount > 0;
         }
 
         // Reservoir sampling, k=1. Taking the first pair would put the forced group in the same corner

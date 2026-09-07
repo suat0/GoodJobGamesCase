@@ -63,11 +63,26 @@ Bunlar "best practice olduğu için" değil, **gerçek bir ihtiyaç doğduğu i�
 **Neden yok:** Case parametrik üretim istiyor (M, N, K, A, B, C değişken; 2–10 arası her boyut çalışmalı). Elle tasarım bununla çelişir.
 **Eşik:** Progression/seviye sistemi eklendiği an.
 
+### Ağırlıklı spawner (yönlendirilmiş refill)
+**Ne:** Üstten düşen blokların düzgün rastgele değil, tahtanın durumuna göre ağırlıklandırılmış çekilmesi.
+Sektörde standart: spawner en az bir yasal hamlenin kalacağını garanti eder, ve aynı mekanizma zorluk
+ayarının da temel aracıdır (oyuncuya ne sıklıkta büyük grup düşeceği buradan ayarlanır).
+**Bizde durum:** `GravityResolver` hücre başına düzgün rastgele çekiyor. Deadlock'u *oluşmadan* önlemek
+yerine oluştuktan sonra çözüyoruz (Karar 37) — bu case için doğru takas, çünkü case açıkça deadlock
+**tespiti ve çözümü** istiyor; önleyici bir spawner o gereksinimi görünmez kılardı.
+**Eşik:** Zorluk eğrisi ürün gereksinimi olduğu an. Ölçtüğümüz bir veri bunu şimdiden gösteriyor:
+varsayılan 10×10'da 2000 oyunda shuffle **hiç** tetiklenmiyor, yani deadlock zaten pratikte oluşmuyor —
+ağırlıklı spawner'ın orada çözeceği bir sorun yok, ayarlayacağı bir zorluk var.
+
 ### Otomatik seviye doğrulama (solver bot)
 **Ne:** Bot'ların seviyeleri binlerce kez oynayıp çözülebilirliği doğrulaması.
 **Bağlam:** Karar 8'de araştırdığımız sektör pratiği (bkz. arXiv 2409.06349).
-**Bizde durum:** Bunu **tek bir üretim kısıtına indirgedik** — "en üst satıra Box konmaz". Aynı garantiyi çok daha ucuza veriyor.
-**Eşik:** Elle tasarlanmış seviyeler + çeşitli engel tipleri geldiği an.
+**Bizde durum:** Üretim tarafında bunu **tek bir kısıta indirgedik** — "en üst satıra Box konmaz" —
+ve doğrulama tarafında rastgele oynayan bir bot'u geçici olarak kullandık: Karar 36 ve 37'deki iki
+hatanın ikisi de ölçümle bulundu, muhakemeyle değil. O bot repoda değil çünkü ölçtüğü özellikler artık
+birer test.
+**Eşik:** Elle tasarlanmış seviyeler + çeşitli engel tipleri geldiği an — o zaman bot geçici değil,
+CI'da koşan kalıcı bir araç olur.
 
 ### Addressables ve platform bazlı asset yönetimi
 **Ne:** ASTC/ETC2 sıkıştırma profilleri, bellek bütçeleri, lazy asset yükleme.

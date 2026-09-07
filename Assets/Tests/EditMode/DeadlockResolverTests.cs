@@ -67,6 +67,8 @@ namespace BlastGame.Tests
 
         // --- Test 7: a shuffle rearranges, it does not reissue ------------------------------------
 
+        // The tier-1 property: where a colour already occurs twice the resolver swaps, so nothing is
+        // reissued. The tier-2 fallback below is the deliberate exception.
         [Test]
         public void Shuffle_PreservesColourCounts_AcrossManySeeds()
         {
@@ -97,19 +99,76 @@ namespace BlastGame.Tests
             Assert.AreEqual(CellType.Empty, board.CellAt(1, 1).Type, "the hole under the Box was filled");
         }
 
-        // --- Unsolvable boards are a condition, not a guess ---------------------------------------
+        // --- Tier 2: assigning, for boards that cannot be swapped into a group --------------------
 
         [Test]
-        public void Shuffle_Fails_WhenNoColourOccursTwice()
+        public void Shuffle_AssignsAColour_WhenNoneOccursTwice()
         {
-            // Four adjacent cells, four different colours: there is nowhere to build a pair from.
+            // Four adjacent cells, four different colours. Swapping cannot help - rearranging a set
+            // with no repeat still has no repeat - but there is somewhere to put a group, so the
+            // resolver writes one rather than giving up. Small boards produce this routinely.
             var board = BoardBuilder.Parse(
                 "01",
                 "23").ToBoard(colorCount: 4, seed: 1);
 
             Assert.IsTrue(board.IsDeadlocked);
-            Assert.IsFalse(board.TryResolveDeadlock(), "no colour occurs twice, so no arrangement has a group");
+            Assert.IsTrue(board.TryResolveDeadlock(),
+                "two adjacent coloured cells means a group can be placed, whatever the colours are");
+            Assert.IsFalse(board.IsDeadlocked, $"resolved but still no move\n{board}");
         }
+
+        [Test]
+        public void Shuffle_ChangesExactlyOneCell_WhenItHasToAssign()
+        {
+            var board = BoardBuilder.Parse(
+                "01",
+                "23").ToBoard(colorCount: 4, seed: 1);
+
+            int[] before = CountColors(board);
+            board.TryResolveDeadlock();
+            int[] after = CountColors(board);
+
+            // One cell took a neighbour's colour: one count down by one, one up by one. Anything more
+            // would be a reissued board rather than a nudged one.
+            int lost = 0, gained = 0;
+            for (int color = 0; color < before.Length; color++)
+            {
+                int delta = after[color] - before[color];
+                if (delta < 0) lost -= delta;
+                if (delta > 0) gained += delta;
+            }
+
+            Assert.AreEqual(1, lost, $"more than one cell changed colour\n{board}");
+            Assert.AreEqual(1, gained, $"more than one cell changed colour\n{board}");
+        }
+
+        [Test]
+        public void Shuffle_SucceedsWheneverTwoColouredCellsAreAdjacent_AcrossManyBoards()
+        {
+            // Random small boards with no Boxes and no holes, so a pair of adjacent coloured cells
+            // always exists. What decides success is placement, never whether a swap was available.
+            var rng = new System.Random(4242);
+
+            for (int trial = 0; trial < SeedCount; trial++)
+            {
+                int rows = 2 + rng.Next(3);
+                int cols = 2 + rng.Next(3);
+
+                var cells = new Cell[rows * cols];
+                for (int i = 0; i < cells.Length; i++) cells[i] = Cell.MakeColor((byte)rng.Next(6));
+
+                var config = new BoardConfig(rows, cols, 6, 1, 2, 3, boxCount: 0);
+                var board = new Board(config, new System.Random(trial));
+                board.LoadState(cells);
+
+                if (!board.IsDeadlocked) continue;
+
+                Assert.IsTrue(board.TryResolveDeadlock(), $"trial {trial}: nothing to place a group on?\n{board}");
+                Assert.IsFalse(board.IsDeadlocked, $"trial {trial}: resolved but still no move\n{board}");
+            }
+        }
+
+        // --- The one condition nothing can fix ----------------------------------------------------
 
         [Test]
         public void Shuffle_Fails_WhenNoTwoColouredCellsAreAdjacent()
