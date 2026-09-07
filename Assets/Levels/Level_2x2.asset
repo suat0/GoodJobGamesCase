@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   rows: 2
   cols: 2
-  colorCount: 6
+  colorCount: 3
   thresholdA: 1
   thresholdB: 2
   thresholdC: 3

@@ -1395,6 +1395,70 @@ kullanıcısını fark edilmeyen bir hataya sokar.
 
 ---
 
+## Karar 36 — Oynanabilirlik garantisi üretimde başlar
+
+Elle test sırasında 2x2 bir tahta kilitli açıldı: hamle yok, shuffle yok, kayıp yok. Sebep iki ayrı
+kusurdu ve **58 testin hiçbiri ikisini de görmüyordu** — çünkü `Board.Generate()` testlerde hiç
+çağrılmıyordu. Oyuncunun gördüğü her tahtayı üreten metot sıfır kapsamdaydı.
+
+### Kusur 1 — `boxCount == 0` grup taramasını atlıyordu
+
+`Generate()`, yerleştirilecek Box yoksa `RecalculateGroups()`'a varmadan erken dönüyordu. Taranmamış
+grup verisiyle `groupIdOf` sıfırlarla dolu kalıyor, `LargestGroupSize` 0 oluyor: **her hücre
+patlatılamaz, bütün tahta deadlock.** Ölçüldü — 8x8, K=4, Box=0 için 200 seed'in 200'ü.
+
+Oyun bunu kazara toparlıyordu: `GameSession.Begin()` deadlock görüp shuffle çağırıyordu. Yani Box'sız
+her seviye gereksiz bir shuffle ile başlıyor ve ekrandaki tahta üretilen tahta olmuyordu. Box'sız,
+case dökümanındaki **iki örneğin de şekli.**
+
+### Kusur 2 — çözümsüz tahta sessizce "oynanıyor" kalıyordu
+
+`Begin()` şunu yazıyordu:
+
+```csharp
+if (board.IsDeadlocked) board.TryResolveDeadlock();   // dönüş değeri yutuluyor
+State = GameState.Playing;
+```
+
+`Play()` içinde aynı çağrının başarısızlığı doğru işleniyordu (`Finish(GameState.Lost)`), ama açılışta
+yutuluyordu. 2x2 + 1 Box = 3 renkli hücre; K=6 ile üçünün de farklı çıkma olasılığı `(6/6)(5/6)(4/6)`,
+yani **%56**. Ölçüldü: 500 seed'in 277'si `Playing` durumunda ve hamlesiz başlıyordu.
+
+### Seçilen çözüm
+
+**Üretim, shuffle'ın yapamadığını yapabilir.** `DeadlockResolver` renk sayılarını korumak zorunda
+olduğu için *takas* eder ve hiçbir renk iki kez geçmiyorsa başarısız olur — bu doğru davranış.
+`Generate()` ise sıfırdan **atama** yapar, kısıtı yoktur. Dolayısıyla `GuaranteeALegalMove()` tek bir
+yazma işlemidir ve başarısız olamaz: üst satır Box tutmadığı için oradaki herhangi iki komşu, iki
+komşu renkli hücredir.
+
+Sütun sabit sıfır değil, çekiliyor — garanti edilen çift hep aynı köşede oturmasın diye. Bu, Karar
+28'de shuffle'ın çifti örneklemesinin gerekçesinin aynısı.
+
+**Tek istisna tek sütunlu tahta:** yatay komşusu yoktur ve Box'lar üst satırın altındaki her satırı
+doldurursa geriye eşleşecek tek bir renkli hücre kalır. Core `Cols >= 1`'e izin verdiği için bu şekil
+temsil edilebilir; `LevelConfig` 2-10'a kıstığı için oyunda üretilemez.
+
+**Ve `Begin()` artık başarısızlığı okuyor:**
+
+```csharp
+State = board.IsDeadlocked && !board.TryResolveDeadlock() ? GameState.Lost : GameState.Playing;
+```
+
+Hamlesi ve çaresi olmayan bir seviye bitmiştir. Oyuncuyu asla cevap veremeyecek bir tahtaya
+dokundurmaya devam ettirmek, kaybettirmekten kötüdür — Karar 29'un "sessiz bozulmayı gürültülü hataya
+çevir" refleksinin aynısı, bu sefer oyuncuya dönük.
+
+### Ders
+
+Bu iki kusur da **hesapla değil, elle oynayarak** bulundu. Yazdığı boyutta (10x10, K=6) ikisi de
+pratikte görünmez: Box her zaman var, ve 100 hücrede doğuştan deadlock astronomik olarak imkânsız.
+Kapsam boşluğunu görünür kılan şey **aralığın ucundaki bir config**'ti — 2x2. Test paketi artık
+üretimi yedi farklı şekil ve 200 seed ile sınıyor, ve o şekillerin çoğu kimsenin kazara oynamayacağı
+şekiller.
+
+---
+
 ## Uygulama notları
 
 Karar sayılacak kadar büyük değil ama koddan okunmayacak kadar da örtük olan şeyler.

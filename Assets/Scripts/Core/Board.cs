@@ -60,18 +60,27 @@ namespace BlastGame.Core
         // BoxCount is a request, clamped to what the board can hold under that rule.
         public void Generate()
         {
-            int colorCount = config.ColorCount;
-            int boxCount = config.BoxCount;
-
             // Uniform per cell, not a balanced deck: refills are uniform anyway, so a balanced start
             // would hold for exactly one move.
             for (int i = 0; i < cells.Length; i++)
-                cells[i] = Cell.MakeColor((byte)rng.Next(colorCount));
+                cells[i] = Cell.MakeColor((byte)rng.Next(config.ColorCount));
 
+            PlaceBoxes();
+
+            // Unconditional, and the last thing either helper leaves to this method: an early return
+            // inside PlaceBoxes once skipped it, and a board whose groups were never scanned reports
+            // every cell unblastable and the whole board deadlocked.
+            RecalculateGroups();
+
+            GuaranteeALegalMove();
+        }
+
+        private void PlaceBoxes()
+        {
             // Row 0 is the bottom and the array is row-major, so the Box-eligible cells are the
             // contiguous prefix - the top-row rule costs no filtering.
             int boxCapacity = (Rows - 1) * Cols;
-            int toPlace = Math.Min(boxCount, boxCapacity);
+            int toPlace = Math.Min(config.BoxCount, boxCapacity);
             if (toPlace == 0) return;
 
             var candidates = new int[boxCapacity];
@@ -89,6 +98,30 @@ namespace BlastGame.Core
 
                 cells[pick] = Cell.MakeBox();
             }
+        }
+
+        // A generated board with no legal move is not a board. Small boards make this ordinary rather
+        // than exotic: a 2x2 holding one Box has three coloured cells, and with six colours all three
+        // come out different more often than not.
+        //
+        // The shuffle cannot help there - it swaps, so it needs a colour that already occurs twice.
+        // Generation has no such constraint. It assigns, so one write is enough and it cannot fail:
+        // the top row never holds a Box, so any two neighbours in it are two adjacent coloured cells.
+        //
+        // The column is drawn rather than fixed at zero, so the guaranteed pair does not always sit in
+        // the same corner - the same reason the shuffle samples its pair instead of taking the first.
+        //
+        // A single-column board is the exception and is left alone: it has no horizontal neighbour, and
+        // Boxes can leave one coloured cell with nothing to pair with. GameSession reports that as a
+        // level that is already over rather than starting one nobody can play.
+        private void GuaranteeALegalMove()
+        {
+            if (Cols < 2 || !IsDeadlocked) return;
+
+            int row = Rows - 1;
+            int col = rng.Next(Cols - 1);
+
+            cells[Index(row, col + 1)] = Cell.MakeColor(cells[Index(row, col)].Color);
 
             RecalculateGroups();
         }

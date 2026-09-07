@@ -183,6 +183,63 @@ namespace BlastGame.Tests
             Assert.AreEqual(first.ToString(), second.ToString(), "an injected seed has to replay exactly");
         }
 
+        // --- Generation is where the guarantee has to start ---------------------------------------
+
+        [Test]
+        public void GeneratedBoards_AlwaysHaveALegalMove_AcrossManySeedsAndShapes()
+        {
+            // Small boards with many colours are where this can actually fail, and they are the shapes
+            // nobody plays by accident. A 2x2 holding one Box has three coloured cells; with six
+            // colours all three come out different more often than not, and the shuffle cannot help
+            // because it swaps and therefore needs a colour that already occurs twice.
+            var shapes = new[]
+            {
+                new { Rows = 2,  Cols = 2,  Colors = 6, Boxes = 1 },
+                new { Rows = 2,  Cols = 2,  Colors = 6, Boxes = 0 },
+                new { Rows = 2,  Cols = 3,  Colors = 6, Boxes = 1 },
+                new { Rows = 3,  Cols = 3,  Colors = 6, Boxes = 2 },
+                new { Rows = 4,  Cols = 10, Colors = 5, Boxes = 6 },
+
+                // No Boxes at all - the shape both of the case document's examples have, and the one
+                // that used to skip the group scan entirely.
+                new { Rows = 8,  Cols = 8,  Colors = 4, Boxes = 0 },
+
+                new { Rows = 10, Cols = 10, Colors = 6, Boxes = 8 },
+            };
+
+            foreach (var shape in shapes)
+            {
+                for (int seed = 1; seed <= SeedCount; seed++)
+                {
+                    var config = new BoardConfig(shape.Rows, shape.Cols, shape.Colors, 1, 2, 3, shape.Boxes);
+                    var board = new Board(config, new System.Random(seed));
+
+                    board.Generate();
+
+                    Assert.IsFalse(board.IsDeadlocked,
+                        $"{shape.Rows}x{shape.Cols} K={shape.Colors} Box={shape.Boxes} seed {seed}: " +
+                        $"generated with no legal move\n{board}");
+                }
+            }
+        }
+
+        [Test]
+        public void GeneratedBoards_HaveTheirGroupsScanned_EvenWithNoBoxes()
+        {
+            // A board whose groups were never scanned reports every cell unblastable and the whole
+            // board deadlocked, which is indistinguishable from a genuinely dead board.
+            var config = new BoardConfig(8, 8, 4, 4, 7, 9, boxCount: 0);
+            var board = new Board(config, new System.Random(1));
+
+            board.Generate();
+
+            bool anyBlastable = false;
+            for (int i = 0; i < board.CellCount; i++)
+                if (board.IsBlastable(i)) { anyBlastable = true; break; }
+
+            Assert.IsTrue(anyBlastable, $"64 cells over four colours and nothing can be tapped\n{board}");
+        }
+
         private static int[] CountColors(Board board)
         {
             var counts = new int[256];

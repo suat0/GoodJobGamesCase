@@ -44,7 +44,7 @@ Assets/Scripts/
 │   ├── Board/     BoardView, BlockView, BlockPool, BoardCamera
 │   ├── Effects/   FallAnimator, EffectRunner, Easing
 │   └── UI/        HudView
-└── Tests/EditMode/  58 test cases over Core, engine-free
+└── Tests/EditMode/  61 test cases over Core, engine-free
 ```
 
 ### 1. Core cannot reference the engine
@@ -113,8 +113,9 @@ raycast. The whole board has **one** `Update`; no block has one of its own.
 Verified in this repository:
 
 - The engine-free boundary, by the compiler.
-- 58 test cases across 6 fixtures, covering group finding and adjacency, icon tiers, gravity
-  segmentation and Box damage, blast ordering, deadlock detection, and shuffle guarantees.
+- 61 test cases across 6 fixtures, covering group finding and adjacency, icon tiers, gravity
+  segmentation and Box damage, blast ordering, deadlock detection, shuffle guarantees, and
+  that generation never produces a board with no legal move.
 
 Worth confirming in the editor, since a claim about performance should be looked at rather than
 believed: the **Profiler** during a blast-heavy stretch (GC Alloc should stay at 0 B/frame), and the
@@ -185,7 +186,7 @@ allows:
 |---|---|
 | `Level_10x10` | The default. 10×10, six colours, eight Boxes, twenty moves — Example 1 from the case document |
 | `Level_4x10` | Wide and short, so the camera fit is limited by width rather than height |
-| `Level_2x2` | The smallest board the case allows. Six colours on four cells deadlocks often, which is the quickest way to watch the shuffle |
+| `Level_2x2` | The smallest board the case allows. Three colours over three coloured cells run out of pairs quickly, so the shuffle is easy to trigger |
 | `Level_8x8_NoBoxes` | No Boxes, so no objective and no move limit — the shape both of the case document's examples have |
 
 A seed of `0` means a fresh board every run; any other value reproduces the same board exactly, which

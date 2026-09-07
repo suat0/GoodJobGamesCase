@@ -78,14 +78,19 @@ namespace BlastGame.Core
         // a test state an exact board - win-before-lose cannot be arranged on a rolled one.
         private void Begin()
         {
-            // Handles a board born deadlocked too, so the opening needs no guarantee of its own.
-            if (board.IsDeadlocked) board.TryResolveDeadlock();
-
             objectiveBoxes = board.RemainingBoxes();
 
             Moves = 0;
             Score = 0;
-            State = GameState.Playing;
+
+            // A generated board always has a legal move - Board.Generate guarantees it. A board stated
+            // through LoadState need not, and a shuffle cannot invent a pair out of colours that each
+            // occur once. The failure has to be read rather than dropped: reporting Playing there
+            // leaves the player tapping a board that can never answer, with no move, no shuffle and no
+            // end - which is worse than losing.
+            State = board.IsDeadlocked && !board.TryResolveDeadlock()
+                ? GameState.Lost
+                : GameState.Playing;
         }
 
         public TurnResult Play(int cellIndex)

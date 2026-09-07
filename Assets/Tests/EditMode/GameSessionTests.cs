@@ -126,6 +126,27 @@ namespace BlastGame.Tests
             Assert.AreEqual(1, session.Moves);
         }
 
+        // --- A board with no move and no remedy is over, not waiting -----------------------------
+
+        [Test]
+        public void SessionOnABoardThatCannotBeMadePlayable_StartsFinished()
+        {
+            // Four cells, four colours: no arrangement produces a pair, so the shuffle has nothing to
+            // work with. Generation never yields this - only a stated board can - but the session has
+            // to read the failure rather than drop it.
+            var board = BoardBuilder.Parse(
+                "01",
+                "23").ToBoard(colorCount: 4);
+
+            Assert.IsTrue(board.IsDeadlocked, "the fixture is meant to have no legal move");
+
+            var session = new GameSession(board, moveLimit: 5);
+
+            Assert.AreEqual(GameState.Lost, session.State,
+                "a level with no move and no way to make one has to end, not leave the player tapping "
+                + "a board that can never answer");
+        }
+
         // --- Scoring ----------------------------------------------------------------------------
 
         [Test]
