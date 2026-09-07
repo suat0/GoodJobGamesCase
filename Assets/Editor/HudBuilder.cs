@@ -158,7 +158,7 @@ namespace BlastGame.Game.EditorTools
 
             var iconImage = icon.GetComponent<Image>();
             iconImage.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(BoxSpritePath);
-            iconImage.raycastTarget = false;
+            MakeNonInteractive(iconImage);
 
             objective = Text("Count", objectiveColumn, "0", 68f, ValueInk, TextAlignmentOptions.Left);
             RectTransform countRect = objective.rectTransform;
@@ -179,7 +179,9 @@ namespace BlastGame.Game.EditorTools
 
             // Blocks taps on the board behind it. The dim is the only raycast target in the popup
             // that has to be one.
-            dimRect.GetComponent<Image>().raycastTarget = true;
+            Image dimImage = dimRect.GetComponent<Image>();
+            dimImage.raycastTarget = true;
+            dimImage.maskable = false;
             dim = dimRect.gameObject.AddComponent<CanvasGroup>();
 
             card = Rect("Card", root);
@@ -208,6 +210,7 @@ namespace BlastGame.Game.EditorTools
             RectTransform buttonRect = Panel("RestartButton", area, ButtonFill, 0f, 0f);
             Image buttonImage = buttonRect.GetComponent<Image>();
             buttonImage.raycastTarget = true;
+            buttonImage.maskable = false;
 
             restart = buttonRect.gameObject.AddComponent<Button>();
             restart.targetGraphic = buttonImage;
@@ -238,13 +241,11 @@ namespace BlastGame.Game.EditorTools
             image.type = Image.Type.Sliced;
             image.color = color;
 
+            MakeNonInteractive(image);
+
             // Below one, the nine-slice borders scale up: Unity's sprite has a small corner made for
             // a small button, and these panels are hundreds of pixels wide.
             image.pixelsPerUnitMultiplier = 0.25f;
-
-            // Off by default: every graphic that can be hit is a graphic the raycaster walks on
-            // every tap, and only the dim and the button need to be.
-            image.raycastTarget = false;
 
             return rect;
         }
@@ -297,9 +298,24 @@ namespace BlastGame.Game.EditorTools
             text.color = color;
             text.alignment = alignment;
             text.text = content;
-            text.raycastTarget = false;
+
+            MakeNonInteractive(text);
 
             return text;
+        }
+
+        // Two opt-outs, both for graphics nobody interacts with. raycastTarget keeps the graphic off
+        // the list the raycaster walks on every tap; maskable keeps it out of the stencil test uGUI
+        // otherwise runs in case a Mask is above it. Neither panel nor label is ever masked or tapped,
+        // and the two flags are the ones a HUD leaves on by accident.
+        // Safe only because this canvas has no Mask or RectMask2D - under one, maskable false would
+        // make the graphic ignore the mask entirely rather than be clipped by it.
+        private static void MakeNonInteractive(MaskableGraphic graphic)
+        {
+            if (graphic == null) return;
+
+            graphic.raycastTarget = false;
+            graphic.maskable = false;
         }
 
         private static void Stretch(RectTransform rect, float offsetX, float offsetY)
