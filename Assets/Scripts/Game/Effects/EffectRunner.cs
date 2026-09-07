@@ -218,14 +218,21 @@ namespace BlastGame.Game
             const float PeakAt = 0.3f;
             const float Peak = 1.25f;
 
-            float scale = t < PeakAt
-                ? Mathf.Lerp(1f, Peak, t / PeakAt)
-                : Mathf.Lerp(Peak, 0f, (t - PeakAt) / (1f - PeakAt));
+            if (t < PeakAt)
+            {
+                // LerpUnclamped because OutBack leaves 0..1 on purpose - the block swells a little
+                // past Peak and settles, which is the whole point of the curve.
+                effect.Block.Scale = Mathf.LerpUnclamped(1f, Peak, Easing.OutBack(t / PeakAt));
 
-            effect.Block.Scale = scale;
+                // Held opaque through the swell so the eye catches it.
+                effect.Block.Alpha = 1f;
+                return;
+            }
 
-            // Held opaque through the swell so the eye catches it, then gone quickly.
-            effect.Block.Alpha = t < PeakAt ? 1f : 1f - (t - PeakAt) / (1f - PeakAt);
+            float collapse = (t - PeakAt) / (1f - PeakAt);
+
+            effect.Block.Scale = Mathf.LerpUnclamped(Peak, 0f, Easing.InQuad(collapse));
+            effect.Block.Alpha = 1f - Easing.InQuad(collapse);
         }
 
         private static void TickShard(ref Effect effect, float deltaTime, float t)
@@ -240,20 +247,20 @@ namespace BlastGame.Game
             effect.Block.Position = effect.Position;
             effect.Block.Rotation = effect.Rotation;
 
-            // Fades only over the last third: a shard that starts disappearing on frame one never
-            // reads as a solid piece of the block it came from.
+            // Fades only over the last third, and eases into it: a shard that starts disappearing on
+            // frame one never reads as a solid piece of the block it came from.
             const float FadeFrom = 0.65f;
-            effect.Block.Alpha = t < FadeFrom ? 1f : 1f - (t - FadeFrom) / (1f - FadeFrom);
+
+            effect.Block.Alpha = t < FadeFrom
+                ? 1f
+                : 1f - Easing.InQuad((t - FadeFrom) / (1f - FadeFrom));
         }
 
-        // Hardest at the moment of impact, recovering from there. Squared so the recovery eases out
-        // instead of stopping dead.
+        // Hardest at the moment of impact, recovering from there. InQuad read backwards is a decay
+        // that starts at full strength and eases to nothing, rather than stopping dead.
         private static void TickSquash(ref Effect effect, float t)
         {
-            float k = 1f - t;
-            k *= k;
-
-            float amount = effect.Scale * k;
+            float amount = effect.Scale * Easing.InQuad(1f - t);
             effect.Block.SetScale(1f + amount, 1f - amount);
         }
 

@@ -131,20 +131,13 @@ namespace BlastGame.Game.UI
             float t = Mathf.Clamp01(popupElapsed / popupDuration);
 
             gameOverDim.alpha = t;
-            float scale = EaseOutBack(t);
+
+            // Written straight onto the scale rather than through a Lerp: OutBack overshoots past 1,
+            // and Mathf.Lerp would clamp the overshoot away.
+            float scale = Easing.OutBack(t);
             gameOverCard.localScale = new Vector3(scale, scale, 1f);
 
             if (t >= 1f) popupElapsed = Idle;
-        }
-
-        // Overshoots past its size and settles back. A panel that simply appears reads as a bug in a
-        // game where everything else moves.
-        private static float EaseOutBack(float t)
-        {
-            const float Overshoot = 1.70158f;
-
-            float u = t - 1f;
-            return 1f + (Overshoot + 1f) * u * u * u + Overshoot * u * u;
         }
 
         private void ShowOutcome(GameState state)
