@@ -3,17 +3,9 @@ using System.Diagnostics;
 
 namespace BlastGame.Core
 {
-    /// <summary>
-    /// Collapses each column into the gaps below it and refills the top with new blocks.
-    /// </summary>
-    /// <remarks>
-    /// Shaped like <see cref="GroupFinder"/>: the board arrives per call as a span and is never retained
-    /// (Karar 13). It writes as well as reads, so the span is mutable - but the ownership story is the
-    /// same, and <see cref="Random"/> is injected rather than created, so a seeded board replays exactly.
-    /// <para>
-    /// No scratch arrays: a column collapses in place behind a single write cursor.
-    /// </para>
-    /// </remarks>
+    // Collapses each column into the gaps below it and refills the top with new blocks.
+    // The board arrives per call as a span and is never retained; no scratch arrays - a column
+    // collapses in place behind a single write cursor.
     public sealed class GravityResolver
     {
         private readonly int rows;
@@ -32,20 +24,9 @@ namespace BlastGame.Core
             this.rng = rng ?? throw new ArgumentNullException(nameof(rng));
         }
 
-        /// <summary>
-        /// Settles every column and records each block that moved into <paramref name="result"/>.
-        /// </summary>
-        /// <remarks>
-        /// <b>Boxes are walls.</b> A Box does not fall and does not let anything past it, so a column is
-        /// really a stack of independent segments separated by Boxes. Each one collapses within itself.
-        /// <para>
-        /// <b>Only the top segment refills.</b> New blocks come from above the board, so the first Box
-        /// they meet stops them. A gap under a Box therefore stays empty, sometimes for the rest of the
-        /// level. That is correct behaviour, not a bug: it never locks the board, because the topmost Box
-        /// in a column always has a full cell above it, so it can always be damaged, and breaking it
-        /// reopens the column (DECISIONS.md, Karar 8).
-        /// </para>
-        /// </remarks>
+        // Boxes are walls: a column is a stack of segments that each collapse within themselves. Only
+        // the top segment refills, so a gap under a Box can stay empty for the rest of the level - that
+        // is correct, and it never locks the column because the topmost Box can always be damaged.
         public void Apply(Span<Cell> cells, BlastResult result)
         {
             AssertMatchesBoard(cells);
@@ -62,7 +43,7 @@ namespace BlastGame.Core
 
                     if (cell.IsBox)
                     {
-                        // The segment below this Box is finished; the next one starts above it.
+                        // The segment below is finished; the next one starts above the Box.
                         write = row + 1;
                         continue;
                     }
@@ -82,8 +63,7 @@ namespace BlastGame.Core
 
                 AssertTopCellIsNotBox(cells, col);
 
-                // Whatever is left of the top segment is filled from outside the board. Order matters:
-                // the block landing lowest is the one that entered first, so it starts lowest.
+                // Order matters: the block landing lowest is the one that entered first.
                 for (int row = write; row < rows; row++)
                 {
                     int target = row * cols + col;
@@ -102,11 +82,8 @@ namespace BlastGame.Core
                     nameof(cells));
         }
 
-        /// <summary>
-        /// The refill loop assumes the top segment reaches the top row, which holds only because Boxes
-        /// never spawn on the top row and never move. If that ever stops being true, a column would
-        /// silently stop producing blocks - so it is checked rather than trusted.
-        /// </summary>
+        // The refill loop assumes the top segment reaches the top row, which holds only because Boxes
+        // never spawn there and never move. Otherwise a column would silently stop producing blocks.
         [Conditional("UNITY_ASSERTIONS")]
         private void AssertTopCellIsNotBox(Span<Cell> cells, int col)
         {

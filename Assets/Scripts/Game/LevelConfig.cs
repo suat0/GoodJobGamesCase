@@ -2,16 +2,13 @@ using UnityEngine;
 
 namespace BlastGame.Game
 {
-    /// <summary>
-    /// Authoring surface for a level. Core is engine-free, so it never sees this type —
-    /// GameController reads the values off and hands Core plain ints.
-    /// </summary>
+    // Authoring surface for a level. Core is engine-free and never sees this type - GameController
+    // reads the values off and hands Core plain ints.
     [CreateAssetMenu(fileName = "LevelConfig", menuName = "Blast/Level Config")]
     public class LevelConfig : ScriptableObject
     {
-        // The case document constrains the board to 2-10 on both axes, but its own Example 1
-        // uses N=12. The page-1 constraint is the normative one, so the inspector clamps to it;
-        // Core imposes no size limit of its own, so a board outside this range still runs.
+        // The case document constrains the board to 2-10 but its own Example 1 uses N=12. The page-1
+        // constraint is normative, so the inspector clamps; Core imposes no size limit of its own.
         public const int MinSize = 2;
         public const int MaxSize = 10;
         public const int MinColors = 1;
@@ -23,23 +20,19 @@ namespace BlastGame.Game
         [SerializeField, Range(MinColors, MaxColors)] private int colorCount = 6;
 
         [Header("Icon tiers")]
-        // A group larger than a threshold shows that tier's icon. Tiers are tested C, B, A so the
-        // highest match wins, which means the thresholds must stay strictly ascending: with
-        // A=7, B=4 a group of 8 would match ">B" first and the first icon would be unreachable.
+        // Tested C, B, A so the highest match wins, which means these must stay strictly ascending.
         [SerializeField] private int thresholdA = 4;
         [SerializeField] private int thresholdB = 7;
         [SerializeField] private int thresholdC = 9;
 
         [Header("Objective")]
-        // Box count is a request, not a guarantee: Core drops it silently if the board cannot
-        // hold that many under the "no Box on the top row" generation rule.
+        // A request, not a guarantee: Core clamps it if the board cannot hold that many under the
+        // "no Box on the top row" rule.
         [SerializeField] private int boxCount = 8;
         [SerializeField] private int moveLimit = 20;
         [SerializeField] private int seed = 0;
 
-        // Read-only to the rest of the game. A ScriptableObject is a single shared asset, and a
-        // runtime write to one persists in the editor — the next play session would silently
-        // start from mutated values.
+        // Read-only: a ScriptableObject is one shared asset, and a runtime write persists in the editor.
         public int Rows => rows;
         public int Cols => cols;
         public int ColorCount => colorCount;
@@ -50,15 +43,12 @@ namespace BlastGame.Game
 
         public int BoxCount => boxCount;
 
-        /// <summary>Zero means unlimited moves. Not a separate mode — the objective is data.</summary>
-        public int MoveLimit => moveLimit;
+        public int MoveLimit => moveLimit;   // zero means unlimited
 
-        /// <summary>Zero means a fresh random board each session; any other value reproduces one.</summary>
-        public int Seed => seed;
+        public int Seed => seed;             // zero means a fresh random board each session
 
 #if UNITY_EDITOR
-        // Range attributes only guard the inspector sliders; presets, scripted edits and the
-        // reset button all bypass them. This is the actual enforcement.
+        // Range only guards the sliders; presets, scripted edits and Reset bypass it. This enforces.
         private void OnValidate()
         {
             rows = Mathf.Clamp(rows, MinSize, MaxSize);

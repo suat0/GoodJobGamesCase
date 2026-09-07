@@ -4,30 +4,15 @@ using UnityEngine;
 
 namespace BlastGame.Game
 {
-    /// <summary>
-    /// Draws a <see cref="Board"/>: one pooled sprite per non-empty cell, laid out on a one-unit grid.
-    /// </summary>
-    /// <remarks>
-    /// <b>Reads Core, never writes it.</b> The board is passed in and only queried; every decision this
-    /// class makes is about pixels. That is the boundary from Karar 1, and it is what lets the animation
-    /// added in the next phase be purely cosmetic.
-    /// <para>
-    /// <b>One world unit per cell.</b> The sprites are 256px at 256 pixels-per-unit, so a cell is exactly
-    /// one unit and the board is never scaled - the camera is fitted to the board instead. Scale that
-    /// lives in a transform leaks into input maths, fall distances and every position calculation;
-    /// keeping it out of them entirely costs nothing (DECISIONS.md, Karar 10).
-    /// </para>
-    /// </remarks>
+    // Draws a Board: one pooled sprite per non-empty cell. Reads Core, never writes it.
+    // One world unit per cell (256px sprites at 256 PPU), and the board is never scaled - the camera
+    // is fitted to it instead. Transform scale would leak into input maths and every fall distance.
     public sealed class BoardView : MonoBehaviour
     {
-        /// <summary>Cell size in world units. Not configurable on purpose - see the class remarks.</summary>
         public const float CellSize = 1f;
 
-        /// <summary>
-        /// The four sprites one colour can show, in tier order. A serialized array on the view rather
-        /// than a ScriptableObject of its own: there is one theme and one consumer, so a second asset
-        /// would add a file to open without removing a decision from anywhere.
-        /// </summary>
+        // The four sprites one colour can show, in tier order. Serialized here rather than in a
+        // ScriptableObject of its own: one theme, one consumer.
         [Serializable]
         private sealed class ColorSprites
         {
@@ -77,23 +62,16 @@ namespace BlastGame.Game
         private BlockPool pool;
         private FallAnimator fallAnimator;
 
-        /// <summary>
-        /// Holds the moving blocks between detaching them from their source cells and attaching them to
-        /// their targets. Needed because moves chain - one block leaves a cell in the same move another
-        /// arrives on it - so every source has to be read before any destination is written.
-        /// </summary>
+        // Holds moving blocks between detach and attach. Needed because moves chain: one block leaves
+        // a cell in the same move another arrives on it.
         private BlockView[] movingBlocks;
 
-        /// <summary>
-        /// The block drawn at each cell, or null where the cell is empty. Indexed exactly like the
-        /// board's own cells, so "which object is at cell i" never needs a search.
-        /// </summary>
+        // Indexed exactly like the board's cells, so "which object is at cell i" never needs a search.
         private BlockView[] blockAt;
 
-        /// <summary>Centre of cell (0, 0) in world space. Row 0 is the bottom row, as everywhere else.</summary>
+        // Centre of cell (0, 0) in world space. Row 0 is the bottom row, as everywhere else.
         private Vector3 origin;
 
-        /// <summary>Seconds into the shuffle animation, or -1 when no shuffle is running.</summary>
         private float shuffleElapsed = NotShuffling;
 
         private bool shuffleRedrawn;
@@ -102,9 +80,9 @@ namespace BlastGame.Game
 
         private bool IsShuffling => shuffleElapsed >= 0f;
 
-        // Karar 4: subscribe in OnEnable, unsubscribe in OnDisable, always through named methods. Start
-        // and OnDestroy would leave an object that is disabled and re-enabled subscribed twice, and a
-        // lambda could never be unsubscribed at all - it also captures, which allocates.
+        // OnEnable/OnDisable and named methods, never Start/OnDestroy and never a lambda: an object
+        // that is disabled and re-enabled would end up subscribed twice, and a lambda cannot be
+        // unsubscribed at all.
         private void OnEnable()
         {
             controller.OnBoardReady += HandleBoardReady;
@@ -129,10 +107,7 @@ namespace BlastGame.Game
 
         private void HandleDeadlockResolved() => BeginShuffleAnimation();
 
-        /// <summary>
-        /// Attaches the view to a board: builds the pool, sizes the internal arrays and frames the camera.
-        /// Call once per board; <see cref="Redraw"/> afterwards for every change.
-        /// </summary>
+        // Call once per board; Redraw afterwards for every change.
         public void Bind(Board newBoard)
         {
             board = newBoard ?? throw new ArgumentNullException(nameof(newBoard));
@@ -144,37 +119,27 @@ namespace BlastGame.Game
                 -(board.Rows - 1) * 0.5f * CellSize,
                 0f);
 
-            // Built once. A restart regenerates the same board object rather than replacing it, so
-            // rebuilding here would strand a whole board's worth of objects in the scene and allocate a
-            // second set - a restart has to cost nothing.
+            // Built once: a restart regenerates the same board object, so rebuilding here would
+            // strand a board's worth of objects and allocate a second set.
             if (pool == null)
             {
                 blockAt = new BlockView[board.CellCount];
 
-                // No move can involve more blocks than the board has cells: every move is identified by
-                // the cell it lands on, and no two land on the same one (BlastResult).
+                // No move can involve more blocks than the board has cells.
                 movingBlocks = new BlockView[board.CellCount];
 
                 fallAnimator = new FallAnimator(board.CellCount, fallSpeed);
 
-                // The board can never show more blocks than it has cells, and Redraw returns every block
-                // before it rents any, so the peak is exactly CellCount. The spare row is headroom for a
-                // block held briefly by an effect later, and it makes an off-by-one impossible rather
-                // than merely unlikely.
+                // Redraw returns every block before renting any, so the peak is exactly CellCount;
+                // the spare row is headroom for a block held briefly by an effect.
                 pool = new BlockPool(blockPrefab, transform, board.CellCount + board.Cols);
             }
 
             FitCamera();
         }
 
-        /// <summary>
-        /// Rebuilds the whole board from Core's current state.
-        /// </summary>
-        /// <remarks>
-        /// A full rebuild, not a diff. The board is static in this phase, so this runs once; the move
-        /// animation added next reads <see cref="BlastResult"/> and touches only what changed, and this
-        /// stays as the way a board is first shown and the way a shuffle is redrawn.
-        /// </remarks>
+        // Full rebuild, not a diff: first draw and post-shuffle redraw only. Ordinary moves go
+        // through ApplyBlast and touch just what changed.
         public void Redraw()
         {
             if (board == null) throw new InvalidOperationException("Redraw before Bind.");
@@ -192,7 +157,7 @@ namespace BlastGame.Game
             for (int i = 0; i < blockAt.Length; i++)
             {
                 Sprite sprite = SpriteFor(i);
-                if (sprite == null) continue;          // an empty cell: a hole under a Box, and nothing to draw
+                if (sprite == null) continue;          // an empty cell: a hole under a Box
 
                 BlockView block = pool.Rent();
                 block.Sprite = sprite;
@@ -202,14 +167,7 @@ namespace BlastGame.Game
             }
         }
 
-        /// <summary>
-        /// Catches the board up with a move Core has already resolved: blasted blocks go back to the
-        /// pool, survivors start falling to their new cells, new blocks enter from above the board.
-        /// </summary>
-        /// <remarks>
-        /// Everything in <paramref name="result"/> is read during this call and never kept - Core reuses
-        /// a single instance, so a stored reference would show the next move's data (BlastResult).
-        /// </remarks>
+        // Catches up with a move Core already resolved. result is read here and never kept.
         public void ApplyBlast(BlastResult result)
         {
             if (board == null) throw new InvalidOperationException("ApplyBlast before Bind.");
@@ -220,17 +178,15 @@ namespace BlastGame.Game
             ReadOnlySpan<int> from = result.MoveFrom;
             ReadOnlySpan<int> to = result.MoveTo;
 
-            // Detach first, attach second. A block leaving cell 40 and another arriving on it belong to
-            // the same move, so writing destinations while sources are still being read would hand one
-            // block to two cells.
+            // Detach first, attach second: a block leaving cell 40 and another arriving on it belong
+            // to the same move, so interleaving would hand one block to two cells.
             for (int i = 0; i < from.Length; i++)
             {
                 int source = from[i];
 
                 if (result.IsSpawn(source))
                 {
-                    // A spawn source decodes to a row above the top of the board, which is exactly where
-                    // the block should start - so new blocks need no separate rule, only a rent.
+                    // A spawn source decodes to a row above the board, which is where it should start.
                     BlockView spawned = pool.Rent();
                     spawned.Position = CellToWorld(source);
 
@@ -238,9 +194,8 @@ namespace BlastGame.Game
                     continue;
                 }
 
-                // The block may still be in the air from an earlier move. Cancelling leaves it exactly
-                // where it is and the new fall starts from there, so a fast player sees a redirection
-                // rather than a jump.
+                // Still in the air from an earlier move? Cancelling leaves it where it is and the new
+                // fall starts from there, so a fast player sees a redirection rather than a jump.
                 fallAnimator.Cancel(source);
 
                 movingBlocks[i] = blockAt[source];
@@ -261,32 +216,21 @@ namespace BlastGame.Game
             RefreshSprites();
         }
 
-        /// <summary>
-        /// Converts a screen point to the cell that was tapped, or false when the tap should be ignored.
-        /// </summary>
-        /// <remarks>
-        /// Lives here because this class already owns both halves of the mapping: the layout that turns a
-        /// cell into a position, and the animator that knows which blocks have landed.
-        /// <para>
-        /// <b>The settled filter is the last step, and it is the only one.</b> It asks about the tapped
-        /// cell alone, never about the group - the case document requires that blocks which have landed
-        /// stay tappable while others are still falling, so a group with one member mid-air must still
-        /// blast (Karar 5, B2).
-        /// </para>
-        /// </remarks>
+        // Lives here because this class owns both halves of the mapping: the layout, and the animator
+        // that knows which blocks have landed.
+        // The settled filter asks about the tapped cell alone, never the group - landed blocks stay
+        // tappable while others fall, so a group with one member mid-air must still blast.
         public bool TryPickCell(Vector3 screenPosition, out int cellIndex)
         {
             cellIndex = -1;
             if (board == null) return false;
 
-            // Nothing on screen means what it says while the board is dissolving and coming back.
             if (IsShuffling) return false;
 
             Vector3 world = boardCamera.ScreenToWorldPoint(screenPosition);
 
-            // origin is the centre of cell (0,0), so half a cell shifts it to that cell's lower-left
-            // corner and the floor lands on the right square. Flooring is what makes negative
-            // coordinates work: a cast to int truncates towards zero and would fold -0.4 onto cell 0.
+            // origin is the centre of cell (0,0), so half a cell shifts it to the lower-left corner.
+            // Flooring, not a cast: a cast truncates towards zero and folds -0.4 onto cell 0.
             int col = Mathf.FloorToInt((world.x - origin.x) / CellSize + 0.5f);
             int row = Mathf.FloorToInt((world.y - origin.y) / CellSize + 0.5f);
 
@@ -299,9 +243,7 @@ namespace BlastGame.Game
             return true;
         }
 
-        /// <summary>
-        /// The single per-frame loop for the whole board. No block has an Update of its own.
-        /// </summary>
+        // The single per-frame loop for the whole board. No block has an Update of its own.
         private void Update()
         {
             if (fallAnimator == null) return;   // before Bind
@@ -310,26 +252,11 @@ namespace BlastGame.Game
             TickShuffleAnimation(Time.deltaTime);
         }
 
-        /// <summary>
-        /// Starts the shuffle feedback: every block shrinks away, the board is redrawn behind the gap,
-        /// and they grow back.
-        /// </summary>
-        /// <remarks>
-        /// <b>Why an animation at all.</b> A shuffle moves no blocks - it swaps the colour values of
-        /// cells - so without feedback the whole board would change identity between two frames and read
-        /// as a glitch. The animation exists to say "that was deliberate" (Karar 9a).
-        /// <para>
-        /// <b>Why shrink rather than fly.</b> Flying each colour to its new cell matches the player's
-        /// mental model better, and would cost a recorded permutation, a second position animation and
-        /// blocks passing through each other. The case is assessed on the deadlock <i>algorithm</i>, not
-        /// on its animation; this carries the same information for a tenth of the work.
-        /// </para>
-        /// <para>
-        /// The scale is written per block, never on this object's transform: a scaled parent would make
-        /// one world unit stop meaning one cell, and setting a child's world position under a parent
-        /// scaled to zero is a division by zero. Cosmetic scale stays on the things being decorated.
-        /// </para>
-        /// </remarks>
+        // A shuffle moves no blocks, it swaps colour values, so without feedback the whole board would
+        // change identity between two frames and read as a glitch. Shrink-and-grow carries the same
+        // information as flying each colour to its cell, for a tenth of the work.
+        // Scale is written per block, never on this transform: a scaled parent would stop one world
+        // unit meaning one cell, and a child under a zero-scaled parent is a division by zero.
         private void BeginShuffleAnimation()
         {
             shuffleElapsed = 0f;
@@ -352,8 +279,7 @@ namespace BlastGame.Game
                 return;
             }
 
-            // The swap happens while nothing is on screen, which also hides the fall animator being
-            // cleared by Redraw - blocks still in the air snap to their cells behind a blank board.
+            // Swapped while nothing is on screen, which also hides Redraw clearing the fall animator.
             if (t >= 0.5f && !shuffleRedrawn)
             {
                 Redraw();
@@ -387,19 +313,9 @@ namespace BlastGame.Game
             }
         }
 
-        /// <summary>
-        /// Re-reads every block's sprite from Core.
-        /// </summary>
-        /// <remarks>
-        /// Every block, not only the ones that moved. A blast merges and splits groups, and a group that
-        /// grows several columns away changes the icon tier of blocks that did not move a single cell -
-        /// so "what changed" is not a question the move list can answer. A hundred sprite assignments
-        /// per move is not worth the bug of getting that wrong.
-        /// <para>
-        /// Damaged Boxes need no case of their own: their health changed, so the same lookup already
-        /// returns the cracked sprite.
-        /// </para>
-        /// </remarks>
+        // Every block, not only the ones that moved: a group growing several columns away changes the
+        // icon tier of blocks that did not move, so the move list cannot answer "what changed".
+        // Damaged Boxes need no case of their own - the same lookup returns the cracked sprite.
         private void RefreshSprites()
         {
             for (int i = 0; i < blockAt.Length; i++)
@@ -410,7 +326,7 @@ namespace BlastGame.Game
             }
         }
 
-        /// <summary>World position of a cell's centre. Valid for rows above the board, which is where new blocks start.</summary>
+        // Valid for rows above the board, which is where new blocks start.
         public Vector3 CellToWorld(int index)
         {
             int row = index / board.Cols;
@@ -419,14 +335,8 @@ namespace BlastGame.Game
             return origin + new Vector3(col * CellSize, row * CellSize, 0f);
         }
 
-        /// <summary>
-        /// Which sprite a cell shows, or null when it shows nothing.
-        /// </summary>
-        /// <remarks>
-        /// The icon tier is asked of Core per cell rather than stored here. It is three comparisons over
-        /// data Core already has, and a copy kept on this side would be a second version of the truth
-        /// that goes stale silently - as a wrong sprite, which nobody notices by looking (Karar 14).
-        /// </remarks>
+        // Tier is asked of Core per cell rather than cached: three comparisons over data Core already
+        // has, where a local copy would go stale silently, as a wrong sprite.
         private Sprite SpriteFor(int index)
         {
             Cell cell = board.CellAt(index);
@@ -437,15 +347,8 @@ namespace BlastGame.Game
             return colorSprites[cell.Color].ForTier(board.TierAt(index));
         }
 
-        /// <summary>
-        /// Fits the board to the screen by widening the camera, never by scaling the board.
-        /// </summary>
-        /// <remarks>
-        /// <c>orthographicSize</c> is the half-height in world units, so the height needs half the rows;
-        /// the width has to be divided by the aspect ratio to be expressed in the same terms. Whichever
-        /// of the two is larger is the one that would otherwise be cut off. A 10x2 board is limited by
-        /// its width, a 2x10 board by its height, and the same line handles both.
-        /// </remarks>
+        // orthographicSize is the half-height in world units, so the width has to be divided by the
+        // aspect ratio to be comparable. A 10x2 board is limited by width, a 2x10 board by height.
         private void FitCamera()
         {
             float verticalNeed = board.Rows * 0.5f * CellSize;
@@ -459,14 +362,8 @@ namespace BlastGame.Game
             boardCamera.transform.position = cameraPosition;
         }
 
-        /// <summary>
-        /// Checks the inspector wiring once, at bind time, with messages that name what is missing.
-        /// </summary>
-        /// <remarks>
-        /// An unassigned sprite otherwise surfaces as an invisible block or a null reference thrown from
-        /// inside the draw loop, a hundred cells into a frame, with nothing in the message about which
-        /// colour was never wired up.
-        /// </remarks>
+        // Checked once, at bind time. An unassigned sprite otherwise surfaces as an invisible block or
+        // a null reference from inside the draw loop, naming no colour.
         private void ValidateSprites()
         {
             if (blockPrefab == null) throw new InvalidOperationException($"{name}: block prefab is not assigned.");
@@ -476,9 +373,8 @@ namespace BlastGame.Game
                 throw new InvalidOperationException(
                     $"{name}: needs exactly {Cell.BoxMaxHealth} Box sprites, one per damage level.");
 
-            // The board is the authority on how many colours are actually in play: LevelConfig's
-            // ColorCount never reaches this side, and a level that uses four colours must not be
-            // rejected for having six sprite slots - or accepted with only three filled.
+            // The board is the authority on how many colours are in play: a four-colour level must not
+            // be rejected for having six sprite slots, or accepted with only three filled.
             int highestColor = -1;
             for (int i = 0; i < board.CellCount; i++)
             {

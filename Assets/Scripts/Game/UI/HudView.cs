@@ -4,24 +4,10 @@ using UnityEngine.UI;
 
 namespace BlastGame.Game.UI
 {
-    /// <summary>
-    /// Shows the score, the moves and the objective, and puts up the end-of-level panel.
-    /// </summary>
-    /// <remarks>
-    /// <b>This is Canvas UI, and the board deliberately is not.</b> The reason the board avoids uGUI is
-    /// the rebuild: changing a Graphic dirties its canvas, and a hundred blocks moving every frame would
-    /// rebuild one every frame. Four labels that change once per move are the opposite case - the cost
-    /// the board was protected from simply is not here, and hand-drawing text with sprites to avoid a
-    /// cost that does not apply would be cargo cult (Karar 10).
-    /// <para>
-    /// The HUD sits on its own Canvas, so even that rebuild cannot reach anything else.
-    /// </para>
-    /// <para>
-    /// <b>It reads the session rather than being told what to print.</b> The controller raises a bare
-    /// "something changed" signal and this asks for what it needs, so a new field on the HUD costs
-    /// nothing anywhere else.
-    /// </para>
-    /// </remarks>
+    // Score, moves, objective, and the end-of-level panel.
+    // Canvas UI here, deliberately not on the board: what the board avoids is the canvas rebuild, and
+    // four labels changing once per move are the opposite of a hundred blocks moving every frame.
+    // Reads the session rather than being told what to print, so a new label costs nothing elsewhere.
     public sealed class HudView : MonoBehaviour
     {
         [SerializeField] private GameController controller;
@@ -36,8 +22,6 @@ namespace BlastGame.Game.UI
         [SerializeField] private Text gameOverLabel;
         [SerializeField] private Button restartButton;
 
-        // Karar 4: OnEnable/OnDisable and named methods, never Start/OnDestroy and never a lambda - a
-        // lambda cannot be unsubscribed, and one that captures allocates as well.
         private void OnEnable()
         {
             controller.OnStatusChanged += HandleStatusChanged;
@@ -54,18 +38,16 @@ namespace BlastGame.Game.UI
         {
             GameSession session = controller.Session;
 
-            // Interpolation allocates a string, once per move. Doing it per frame is what would matter,
-            // and that is exactly what listening instead of polling avoids.
+            // One string per move. Doing it per frame is what would matter, and listening instead of
+            // polling is what avoids that.
             scoreLabel.text = $"Score  {session.Score}";
 
-            // With no objective there is nothing to run out of moves for, so the counter reports moves
-            // made rather than moves left - the same label, told the truth that applies (Karar 7a).
+            // With no objective there is nothing to run out of moves for: report moves made instead.
             movesLabel.text = session.HasMoveLimit
                 ? $"Moves  {session.MovesLeft}"
                 : $"Moves  {session.Moves}";
 
-            // The objective is data that can be absent, not a second game mode: the label is simply not
-            // shown when the board generated without Boxes, as both of the case document's examples do.
+            // The objective is data that can be absent, not a second game mode.
             objectiveLabel.gameObject.SetActive(session.HasObjective);
             if (session.HasObjective) objectiveLabel.text = $"Boxes  {session.RemainingBoxes}";
 
