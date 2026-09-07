@@ -1,8 +1,9 @@
 # Blast
 
 A collapse / tile-matching game built for the Good Job Games case study, in **Unity 6000.2.6f2**.
-Tap any group of two or more adjacent same-coloured blocks to blast it; blocks above fall in, new ones
-drop from the top, and the board is never allowed to reach a state with no legal move.
+Tap any group of two or more adjacent same-coloured blocks to blast it; blocks above fall in and new
+ones drop from the top. A board this game generates can never reach a state with no legal move — that
+is a property of the code, held by a test rather than by an argument.
 
 The case names performance — memory, CPU, GPU — as its focus, so that is what the architecture is
 organised around. The short version: **the game rules never touch the engine, and nothing allocates
@@ -22,7 +23,13 @@ after the board is built.**
 | Settled blocks stay tappable while others are still falling | `BoardView.TryPickCell` |
 | Deadlock is detected and resolved without a blind reshuffle, and the resolution cannot fail on a board this game can generate | `DeadlockResolver.cs` |
 
+Two inconsistencies in the case document, and how they were read:
 
+1. The constraints say 2–10 columns, but Example 1 uses `N = 12`. **The page-one constraints are
+   treated as authoritative.** The code still runs whatever the config gives it, with no hard-coded
+   ceiling, so both readings work.
+2. Example 1 writes `C = 9` and then says "more than 10". Example 2 is self-consistent, so the rule
+   is read as **`> C`**.
 
 ---
 
@@ -49,7 +56,7 @@ This is what makes the tests engine-free: they assert on rules, not on a scene.
 
 ### 2. The rules resolve instantly; animation trails behind
 
-`Board.Blast()` produces the final board in one call — removals, falls, spawns, regrouping, deadlock
+`Board.TryBlast()` produces the final board in one call — removals, falls, spawns, regrouping, deadlock
 check. The board is never observable in a half-resolved state. The view then walks blocks from where
 they were drawn to where the board says they now are, and that animation is **purely cosmetic**: it
 cannot change an outcome, and dropping a frame of it loses a sparkle, never a move.
@@ -80,7 +87,7 @@ Nothing on the gameplay path allocates. The mechanisms, not the intention:
 - `BlockPool` creates every block once and then only activates and deactivates. It **throws** rather
   than growing when exhausted: capacity is derived from the board, so running out means the view
   leaked a block, and a pool that quietly allocates hides the bug it exists to catch.
-- `Board.Blast` writes into one reused `BlastResult`. It is valid during the call and never stored.
+- `Board.TryBlast` writes into one reused `BlastResult`. It is valid during the call and never stored.
 - The HUD writes `label.SetText("{0:0}", value)`, not an interpolated string, so the score counter
   can change every frame while it climbs without putting anything on the heap.
 
@@ -100,18 +107,34 @@ mask stencil test.
 Input is grid arithmetic — `ScreenToWorldPoint` and a floor division. No colliders, no physics, no
 raycast. The whole board has **one** `Update`; no block has one of its own.
 
-### What is verified, and what to check yourself
+### Measured, not argued
 
-Verified in this repository:
+A claim about performance should be looked at rather than believed. From the editor Stats overlay,
+playing two of the shipped levels:
 
-- The engine-free boundary, by the compiler.
-- 63 test cases across 6 fixtures, covering group finding and adjacency, icon tiers, gravity
-  segmentation and Box damage, blast ordering, deadlock detection, shuffle guarantees, and
-  that generation never produces a board with no legal move.
+| | 8×8, no Boxes | 10×10, eight Boxes |
+|---|---|---|
+| Batches | 4 | 5 |
+| SetPass calls | 3 | 3 |
+| Saved by batching | 65 | 101 |
 
-Worth confirming in the editor, since a claim about performance should be looked at rather than
-believed: the **Profiler** during a blast-heavy stretch (GC Alloc should stay at 0 B/frame), and the
-**Frame Debugger** (the board and its effects should be a single batch).
+Two things fall out of the arithmetic. **The whole world is exactly one batch**: 64 blocks plus
+backdrop plus frame is 66 renderers and 65 draws were saved; 100 plus the same two is 102 and 101 were
+saved. Both are exactly `N − 1`. And **`SetPass calls` stayed at 3** while the board grew from 64 cells
+to 100 — the GPU state changes do not scale with the board.
+
+The three passes are the world atlas, the HUD's panel sprites, and TMP's text shader. The extra batch
+in the right-hand column is the objective icon, an `Image` sitting between two runs of text in the HUD
+hierarchy; merging it back would save one draw call and cost the clarity of the layout.
+
+**With shards on screen the batch count does not move**, which is the whole reason effects are pooled
+`SpriteRenderer`s instead of a `ParticleSystem`.
+
+The Profiler's memory module reports **`GC allocated in frame: 0 B`** while playing.
+
+Also verified: the engine-free boundary, by the compiler, and 63 test cases across 6 fixtures covering
+group finding and adjacency, icon tiers, gravity segmentation and Box damage, blast ordering, deadlock
+detection, shuffle guarantees, and that generation never produces a board with no legal move.
 
 ---
 
@@ -183,6 +206,10 @@ allows:
 
 A seed of `0` means a fresh board every run; any other value reproduces the same board exactly, which
 is what makes Core testable.
+
+Worth knowing if you want to watch the deadlock shuffle: on a full 10×10 board it essentially never
+fires — 2000 simulated playthroughs triggered it zero times, because a board that size always has a
+pair somewhere. `Level_2x2` is the quickest way to see it.
 
 ### Editor tooling
 
